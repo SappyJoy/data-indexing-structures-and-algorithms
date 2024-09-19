@@ -34,20 +34,20 @@ set(FETCHCONTENT_BASE_DIR
 FetchContent_Declare(
   fmt
   GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-  GIT_TAG 10.1.1)
+  GIT_TAG 11.0.2)
 
 # It's better to move to 'test/'
 FetchContent_Declare(
   googletest
   GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG release-1.11.0
+  GIT_TAG v1.15.2
   CMAKE_CACHE_ARGS "${googletest_cmake_args}")
 
 # Download benchmark lib It's better to move to 'benchmark/'
 FetchContent_Declare(
   googlebenchmark
   GIT_REPOSITORY https://github.com/google/benchmark.git
-  GIT_TAG v1.8.3)
+  GIT_TAG v1.9.0)
 
 FetchContent_MakeAvailable(fmt googletest googlebenchmark)
 
