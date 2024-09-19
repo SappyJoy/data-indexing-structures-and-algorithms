@@ -1,6 +1,5 @@
-#include "Bucket.hpp"
+#include "ehash/Bucket.hpp"
 #include <optional>
-#include <stdexcept>
 
 namespace ehash {
 

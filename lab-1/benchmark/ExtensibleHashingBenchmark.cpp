@@ -1,4 +1,4 @@
-#include "ExtensibleHashing.hpp"
+#include "ehash/ExtensibleHashing.hpp"
 #include <benchmark/benchmark.h>
 
 using namespace ehash;
