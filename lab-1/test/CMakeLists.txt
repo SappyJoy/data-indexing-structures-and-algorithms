@@ -1,2 +1,2 @@
 include(CMakeLists.gtest.txt)
-add_subdirectory(common)
+add_gtest(ExtensibleHashingTest)
