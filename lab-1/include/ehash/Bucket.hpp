@@ -1,30 +1,199 @@
 #ifndef BUCKET_HPP
 #define BUCKET_HPP
 
-#include <optional>
-#include <unordered_map>
+#include <fstream>
+#include <google/protobuf/message.h>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <sys/statvfs.h>
+#include <vector>
 
 namespace ehash {
 
-// Bucket class representing a single bucket in the hash table
-class Bucket {
-    std::unordered_map<int, int> data;
-    std::size_t local_depth;
+// Default block size (4KB)
+// const size_t DEFAULT_BLOCK_SIZE = 4096;
+
+// Helper function to check if a file exists
+bool fileExists(const std::string &path) {
+    std::ifstream file(path);
+    return file.good();
+}
+
+// Helper function to get filesystem block size for a given path
+size_t getBlockSize(const std::string &path) {
+    struct statvfs stat;
+    if (statvfs(path.c_str(), &stat) == 0) {
+        return stat.f_bsize; // Return block size
+    } else {
+        throw std::runtime_error("Unable to get block size for path: " + path);
+    }
+}
+
+// Create the file if it doesn't exist, and open it
+void createFileIfNotExists(const std::string &path) {
+    // std::cout << "createFileIfNotExists" << std::endl;
+    if (!fileExists(path)) {
+        std::ofstream file(path);
+        if (!file) {
+            throw std::runtime_error("Failed to create bucket file: " + path);
+        }
+        file.close();
+    }
+    // std::cout << "File EXISTS" << std::endl;
+}
+
+// Generic Bucket class for storing any Protobuf objects
+template <typename T> class Bucket {
+    static_assert(std::is_base_of<google::protobuf::Message, T>::value,
+                  "T must be a subclass of google::protobuf::Message");
+
+  private:
+    std::string filePath;                    // Path to the file where the bucket is stored
+    size_t blockSize;                        // Filesystem block size (e.g., 4KB)
+    size_t maxBucketSize;                    // Maximum size of the bucket (a multiple of block size)
+    std::vector<std::unique_ptr<T>> entries; // Deserialized objects in memory
+
+    // Internal method to serialize and write to disk
+    void writeToDisk() {
+        std::ofstream outFile(filePath, std::ios::binary | std::ios::trunc);
+        if (!outFile) {
+            throw std::runtime_error("Failed to open file for writing: " + filePath);
+        }
+
+        size_t currentSize = 0;
+        for (const auto &entry : entries) {
+            std::string serializedEntry;
+            entry->SerializeToString(&serializedEntry);
+            size_t entrySize = serializedEntry.size();
+
+            // Check if adding this entry would exceed the bucket's size limit
+            if (currentSize + sizeof(int) + entrySize > maxBucketSize) {
+                throw std::runtime_error("Bucket overflow: adding entry exceeds max bucket size");
+            }
+
+            outFile.write(reinterpret_cast<const char *>(&entrySize), sizeof(int)); // Write size of entry
+            outFile.write(serializedEntry.data(), entrySize);                       // Write serialized data
+            currentSize += sizeof(int) + entrySize;                                 // Update current bucket size
+        }
+
+        // Pad the rest of the bucket to ensure it's a multiple of the block size
+        size_t padding = maxBucketSize - currentSize;
+        std::string paddingData(padding, '\0');
+        outFile.write(paddingData.data(), padding);
+        outFile.close();
+    }
+
+    // Internal method to read and deserialize from disk
+    void readFromDisk() {
+        std::ifstream inFile(filePath, std::ios::binary);
+        if (!inFile) {
+            throw std::runtime_error("Failed to open file for reading: " + filePath);
+        }
+
+        entries.clear();
+        size_t currentSize = 0;
+        while (currentSize < maxBucketSize && !inFile.eof()) {
+            int entrySize = 0;
+            inFile.read(reinterpret_cast<char *>(&entrySize), sizeof(int));
+            if (inFile.eof())
+                break;
+
+            std::string serializedEntry(entrySize, '\0');
+            inFile.read(&serializedEntry[0], entrySize);
+            if (inFile.eof())
+                break;
+
+            // Create a new instance of T (a Protobuf Message)
+            std::unique_ptr<T> entry(new T());
+            if (!entry->ParseFromString(serializedEntry)) {
+                throw std::runtime_error("Failed to parse protobuf object");
+            }
+            entries.push_back(std::move(entry));
+            currentSize += sizeof(int) + entrySize;
+        }
+
+        inFile.close();
+    }
 
   public:
-    explicit Bucket(std::size_t capacity);
+    // Constructor to initialize the bucket with file path and maximum size
+    Bucket(const std::string &path, size_t maxSize) : filePath(path) {
+        // Create the file if it doesn't exist
+        createFileIfNotExists(path);
 
-    bool is_full() const;
+        // Now safely get the block size
+        blockSize = getBlockSize(path);
 
-    bool insert(int key, int value);
+        // Ensure maxBucketSize is a multiple of the block size
+        maxBucketSize = ((maxSize / blockSize) + 1) * blockSize;
+        if (maxBucketSize < blockSize) {
+            throw std::runtime_error("Max bucket size must be at least one block size");
+        }
+        // WARN: remove this
+        // maxBucketSize = 10;
 
-    bool remove(int key);
+        readFromDisk(); // Load objects into memory when bucket is initialized
+    }
 
-    std::optional<int> search(int key) const;
+    ~Bucket() = default;
 
-    void clear();
+    // Add a new Protobuf entry to the bucket
+    bool addEntry(std::unique_ptr<T> entry) {
+        // std::cout << "Adding entry to bucket" << std::endl;
+        std::string serializedEntry;
+        entry->SerializeToString(&serializedEntry);
+        size_t entrySize = serializedEntry.size();
 
-    const std::unordered_map<int, int> &get_data() const;
+        // If the entry itself is larger than the maximum bucket size, throw an error
+        if (entrySize > maxBucketSize) {
+            throw std::runtime_error("Entry size exceeds maximum bucket size");
+        }
+
+        // Check if adding this entry will exceed the current bucket's capacity
+        size_t currentSize = 0;
+        for (const auto &e : entries) {
+            std::string temp;
+            e->SerializeToString(&temp);
+            currentSize += sizeof(int) + temp.size();
+        }
+
+        if (currentSize + sizeof(int) + entrySize > maxBucketSize) {
+            return false; // Bucket full, cannot add more entries
+        }
+
+        entries.push_back(std::move(entry));
+        writeToDisk(); // Persist to disk after modification
+        return true;
+    }
+
+    // Retrieve all entries from the bucket
+    const std::vector<std::unique_ptr<T>> &getEntries() const { return entries; }
+
+    std::vector<std::unique_ptr<T>> retrieveEntries() { return std::move(entries); }
+
+    // Check if bucket is full
+    bool isFull() const {
+        size_t currentSize = 0;
+        for (const auto &entry : entries) {
+            std::string serializedEntry;
+            entry->SerializeToString(&serializedEntry);
+            currentSize += sizeof(int) + serializedEntry.size();
+        }
+        return currentSize >= maxBucketSize;
+    }
+
+    void clear() {
+        entries.clear();
+        writeToDisk();
+    }
+
+    void print() const {
+        for (const auto &entry : entries) {
+            std::cout << "Entry: " << entry->DebugString();
+        }
+    }
 };
 
 } // namespace ehash

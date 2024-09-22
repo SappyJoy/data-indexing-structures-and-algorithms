@@ -1,0 +1,6 @@
+package ehash.proto;
+
+message TestMessage {
+    required int32 id = 1;
+}
+
