@@ -49,9 +49,6 @@ template <typename T> class ExtensibleHashing {
         size_t newBucketIndex = bucketIndex + (1 << (localDepth - 1));
         std::string newBucketPath = bucketDirectory + "/bucket_" + std::to_string(newBucketIndex) + ".dat";
         auto newBucket = std::make_shared<Bucket<T>>(newBucketPath, maxBucketSize);
-        // std::cout << "Splitting bucket at index: " << bucketIndex << " into two buckets: " << newBucketIndex << " and
-        // "
-        //           << bucketIndex << "" << std::endl;
 
         auto oldBucket = oldBucketEntry->bucket;
         auto entries = oldBucket->retrieveEntries();
@@ -61,16 +58,11 @@ template <typename T> class ExtensibleHashing {
             std::string serializedKey;
             entry->SerializeToString(&serializedKey);
             size_t hashValue = hashKey(serializedKey);
-            // std::cout << "Entry " << entry->DebugString() << "Hash value: " << hashValue << std::endl;
 
             size_t newPrefix = getHashPrefix(hashValue, localDepth);
             if (newPrefix == bucketIndex) {
-                // std::cout << "Moved entry " << entry->DebugString() << " in the old bucket " << bucketIndex
-                //           << std::endl;
                 oldBucket->addEntry(std::move(entry)); // Keep entry in the old bucket
             } else {
-                // std::cout << "Moved entry " << entry->DebugString() << " to the new bucket " << newBucketIndex
-                //           << " but new prefix " << newPrefix << std::endl;
                 newBucket->addEntry(std::move(entry)); // Move entry to the new bucket
             }
         }
@@ -93,6 +85,24 @@ template <typename T> class ExtensibleHashing {
         }
     }
 
+    size_t addEntryInternal(std::unique_ptr<T> entry, std::size_t entrySize, std::size_t hashValue) {
+        size_t bucketIndex = getHashPrefix(hashValue, globalDepth);
+        auto &targetBucketEntry = directories[bucketIndex];
+        auto &targetBucket = targetBucketEntry->bucket;
+
+        // Try to add the entry
+        if (!targetBucket->canAddEntry(entrySize)) {
+            splitBucket(targetBucketEntry->rootBucketIndex);
+
+            // Retry adding the entry after the split
+            return addEntryInternal(std::move(entry), entrySize, hashValue);
+        }
+
+        targetBucket->addEntry(std::move(entry));
+
+        return hashValue;
+    }
+
   public:
     // Constructor
     ExtensibleHashing(const std::string &directoryPath, size_t bucketSize)
@@ -110,43 +120,31 @@ template <typename T> class ExtensibleHashing {
 
     // Add entry to the hash table
     size_t addEntry(std::unique_ptr<T> entry) {
-
         // Serialize the key once
         std::string serializedKey;
         entry->SerializeToString(&serializedKey);
-        // std::cout << "Serialized key" << std::endl;
 
         size_t hashValue = hashKey(serializedKey);
         size_t bucketIndex = getHashPrefix(hashValue, globalDepth);
-        // if (bucketIndex >= 30) {
-        //     throw std::runtime_error("Bucket index out of range");
-        //     return 0;
-        // }
-
-        // std::cout << "Hash value: " << hashValue << " Bucket index: " << bucketIndex << std::endl;
-        // std::cout << "Add new entry " << entry->DebugString() << " Hash value: " << hashValue
-        //           << " Bucket index: " << bucketIndex << std::endl;
 
         auto &targetBucketEntry = directories[bucketIndex];
         auto &targetBucket = targetBucketEntry->bucket;
-        // std::cout << "Target bucket retrieved" << std::endl;
+
+        if (targetBucket->hasKey(serializedKey)) {
+            targetBucket->updateEntry(std::move(entry));
+            return hashValue;
+        }
 
         // Try to add the entry
-        if (!targetBucket->addEntry(std::move(entry))) {
-
-            // Perform bucket split
-            // print();
+        if (!targetBucket->canAddEntry(serializedKey.size())) {
 
             splitBucket(targetBucketEntry->rootBucketIndex);
 
-            // Create a new unique_ptr from the original entry's serialized string
-            auto newEntry = std::make_unique<T>();
-            newEntry->ParseFromString(serializedKey); // Deserialize the object from the serialized key
-
             // Retry adding the entry after the split
-            return addEntry(std::move(newEntry));
+            return addEntryInternal(std::move(entry), serializedKey.size(), hashValue);
         }
-        // print();
+
+        targetBucket->addEntry(std::move(entry));
 
         return hashValue;
     }
@@ -168,7 +166,6 @@ template <typename T> class ExtensibleHashing {
 
     std::optional<T *> getEntry(const size_t &hash) const {
         size_t bucketIndex = getHashPrefix(hash, globalDepth);
-        // std::cout << "Bucket index: " << bucketIndex << std::endl;
         const auto &entries = directories.at(bucketIndex)->bucket->getEntries(); // Get entries from the correct bucket
 
         for (const auto &entry : entries) {

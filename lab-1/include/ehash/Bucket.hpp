@@ -54,6 +54,7 @@ template <typename T> class Bucket {
     size_t blockSize;                        // Filesystem block size (e.g., 4KB)
     size_t maxBucketSize;                    // Maximum size of the bucket (a multiple of block size)
     std::vector<std::unique_ptr<T>> entries; // Deserialized objects in memory
+    std::size_t currentSize = 0;             // Current size of the bucket
 
     // Internal method to serialize and write to disk
     void writeToDisk() {
@@ -119,7 +120,7 @@ template <typename T> class Bucket {
 
   public:
     // Constructor to initialize the bucket with file path and maximum size
-    Bucket(const std::string &path, size_t maxSize) : filePath(path) {
+    Bucket(const std::string &path, size_t maxSize) : filePath(path), currentSize(0) {
         // Create the file if it doesn't exist
         createFileIfNotExists(path);
 
@@ -131,8 +132,6 @@ template <typename T> class Bucket {
         if (maxBucketSize < blockSize) {
             throw std::runtime_error("Max bucket size must be at least one block size");
         }
-        // WARN: remove this
-        // maxBucketSize = 10;
 
         readFromDisk(); // Load objects into memory when bucket is initialized
     }
@@ -151,21 +150,42 @@ template <typename T> class Bucket {
             throw std::runtime_error("Entry size exceeds maximum bucket size");
         }
 
-        // Check if adding this entry will exceed the current bucket's capacity
-        size_t currentSize = 0;
-        for (const auto &e : entries) {
-            std::string temp;
-            e->SerializeToString(&temp);
-            currentSize += sizeof(int) + temp.size();
-        }
-
         if (currentSize + sizeof(int) + entrySize > maxBucketSize) {
             return false; // Bucket full, cannot add more entries
         }
 
         entries.push_back(std::move(entry));
+        currentSize += sizeof(int) + entrySize;
         writeToDisk(); // Persist to disk after modification
         return true;
+    }
+
+    bool canAddEntry(std::size_t entrySize) const { return currentSize + sizeof(int) + entrySize <= maxBucketSize; }
+
+    bool hasKey(const std::string &key) const {
+        for (const auto &entry : entries) {
+            std::string serializedKey;
+            entry->SerializeToString(&serializedKey);
+            if (key == serializedKey) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void updateEntry(std::unique_ptr<T> newEntry) {
+        std::string serializedKey;
+        newEntry->SerializeToString(&serializedKey);
+
+        for (auto &entry : entries) {
+            std::string existingKey;
+            entry->SerializeToString(&existingKey);
+
+            if (existingKey == serializedKey) {
+                entry = std::move(newEntry); // Replace the existing entry
+                return;
+            }
+        }
     }
 
     // Retrieve all entries from the bucket
@@ -186,6 +206,7 @@ template <typename T> class Bucket {
 
     void clear() {
         entries.clear();
+        currentSize = 0;
         writeToDisk();
     }
 

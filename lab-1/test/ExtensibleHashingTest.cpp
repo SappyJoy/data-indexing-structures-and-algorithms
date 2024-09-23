@@ -64,8 +64,6 @@ TEST_F(ExtensibleHashingTest, AddAndRetrieveEntries) {
     size_t hash_2 = hashTable.addEntry(createTestMessage(2));
     size_t hash_3 = hashTable.addEntry(createTestMessage(3));
 
-    // hashTable.print();
-
     // Retrieve entries by their key (ID as a string)
     const auto &entries = hashTable.getEntries(hash_1);
     EXPECT_EQ(entries[0]->id(), 1);
@@ -84,19 +82,15 @@ TEST_F(ExtensibleHashingTest, BucketSplit) {
 
     size_t oldBucketCount = hashTable.bucketCount();
 
-    // std::cout << "Before adding entries" << std::endl;
-    // hashTable.print();
-
     // Add entries until bucket splits
     std::vector<size_t> hashes;
     for (int i = 1; i <= 10000; ++i) {
         auto entry = createTestMessage(i);
         size_t hashValue = hashTable.addEntry(std::move(entry));
+        // std::cout << "Added entry with hash: " << hashValue << std::endl;
+        // hashTable.print();
         hashes.push_back(hashValue);
     }
-
-    // std::cout << "After adding entries" << std::endl;
-    // hashTable.print();
 
     // Verify that all entries are still retrievable after split
     for (size_t i = 0; i < hashes.size(); ++i) {
@@ -105,64 +99,63 @@ TEST_F(ExtensibleHashingTest, BucketSplit) {
         EXPECT_EQ(entry.value()->id(), i + 1);
     }
 
-    // Check if the global depth increased after split
-    // Depending on implementation, global depth should have increased after the split
-    // hashTable.print(); // Debug output to check directory structure and bucket contents
-
     EXPECT_GT(hashTable.bucketCount(), oldBucketCount);
 }
 
-// // Test: Rehashing when global depth is exceeded
-// TEST_F(ExtensibleHashingTest, GlobalDepthDoubling) {
-//     // Set a very small bucket size to quickly force global depth increase
-//     ehash::ExtensibleHashing<TestMessage> hashTable(TEST_DIR, 64); // Very small to force early rehash
-//
-//     // Add entries until global depth needs to be doubled
-//     for (int i = 1; i <= 10; ++i) {
-//         hashTable.addEntry(createTestMessage(i));
-//     }
-//
-//     // Test that all entries are still accessible
-//     for (int i = 1; i <= 10; ++i) {
-//         const auto &entries = hashTable.getEntries(std::to_string(i));
-//         ASSERT_EQ(entries.size(), 1);
-//         EXPECT_EQ(entries[0]->id(), i);
-//     }
-// }
-//
-// // Test: Handle duplicate keys (overwrite)
-// TEST_F(ExtensibleHashingTest, HandleDuplicateKeys) {
-//     ehash::ExtensibleHashing<TestMessage> hashTable(TEST_DIR, 1024);
-//
-//     // Add an entry
-//     hashTable.addEntry(createTestMessage(1));
-//
-//     // Add another entry with the same key (this should overwrite)
-//     auto newMessage = createTestMessage(1);
-//     newMessage->set_id(100); // Change value
-//     hashTable.addEntry(std::move(newMessage));
-//
-//     // Verify that the entry has been updated
-//     const auto &entries = hashTable.getEntries("1");
-//     ASSERT_EQ(entries.size(), 1);
-//     EXPECT_EQ(entries[0]->id(), 100); // New value should be present
-// }
-//
-// // Test: Handle empty entries
-// TEST_F(ExtensibleHashingTest, HandleEmptyEntries) {
-//     ehash::ExtensibleHashing<TestMessage> hashTable(TEST_DIR, 1024);
-//
-//     // Attempt to add an empty entry
-//     std::unique_ptr<TestMessage> emptyMessage = std::make_unique<TestMessage>();
-//     emptyMessage->set_id(0); // Default key
-//
-//     ASSERT_NO_THROW(hashTable.addEntry(std::move(emptyMessage)));
-//
-//     // Check that the empty entry is retrievable
-//     const auto &entries = hashTable.getEntries("0");
-//     ASSERT_EQ(entries.size(), 1);
-//     EXPECT_EQ(entries[0]->id(), 0); // Default empty entry should be retrievable
-// }
+// Test: Adding an entry with a duplicate key should update the existing entry
+TEST_F(ExtensibleHashingTest, UpdateDuplicateKey) {
+    ExtensibleHashing<TestMessage> hashTable(TEST_DIR, 4096);
+
+    // Create and add an entry
+    auto entry = createTestMessage(1);
+    size_t hashValue = hashTable.addEntry(std::move(entry));
+
+    // Check that the entry was added correctly
+    const auto &entries = hashTable.getEntries(hashValue);
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0]->id(), 1);
+
+    // Create a new entry with the same key but different data
+    auto updatedEntry = createTestMessage(1); // Same ID
+    hashTable.addEntry(std::move(updatedEntry));
+
+    // Check that the entry was updated
+    const auto &updatedEntries = hashTable.getEntries(hashValue);
+    ASSERT_EQ(updatedEntries.size(), 1); // Still only 1 entry
+    EXPECT_EQ(updatedEntries[0]->id(), 1);
+}
+
+// Test: Adding a duplicate key after a bucket split should update the entry in the correct bucket
+TEST_F(ExtensibleHashingTest, UpdateDuplicateKeyAfterSplit) {
+    // Create a small bucket size to force a split early
+    ExtensibleHashing<TestMessage> hashTable(TEST_DIR, 1024, 1);
+
+    // Add enough entries to cause a split
+    std::vector<size_t> hashes;
+    for (int i = 1; i <= 2000; ++i) {
+        auto entry = createTestMessage(i);
+        size_t hashValue = hashTable.addEntry(std::move(entry));
+        hashes.push_back(hashValue);
+    }
+
+    // Pick an entry to update after the split
+    auto hashToUpdate = hashes[1000];            // Pick the entry with ID 51
+    auto updatedEntry = createTestMessage(1001); // Same ID as the 51st entry
+
+    // Update the entry
+    hashTable.addEntry(std::move(updatedEntry));
+
+    // Retrieve the updated entry and verify the data
+    const auto &entriesAfterUpdate = hashTable.getEntries(hashToUpdate);
+
+    std::size_t duplicates = 0;
+    for (const auto &entry : entriesAfterUpdate) {
+        if (entry->id() == 1001) {
+            duplicates++;
+        }
+    }
+    EXPECT_EQ(duplicates, 1);
+}
 
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
