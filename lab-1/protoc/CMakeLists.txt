@@ -1,12 +1,4 @@
-include(FindProtobuf)
-find_package(Protobuf CONFIG REQUIRED)
-
-# Check if protobuf was found
-if(PROTOBUF_FOUND)
-  message("-- protobuf found")
-else()
-  message(FATAL_ERROR "-- Cannot find Protobuf")
-endif()
+find_package(Protobuf REQUIRED CONFIG)
 
 file(GLOB PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/*.proto)
 

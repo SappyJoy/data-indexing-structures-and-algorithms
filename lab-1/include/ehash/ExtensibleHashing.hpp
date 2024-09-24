@@ -80,7 +80,7 @@ template <typename T> class ExtensibleHashing {
         directories[newBucketIndex] =
             std::make_shared<DirectoryEntry>(DirectoryEntry{newBucket, localDepth, newBucketIndex});
         // Update the directory with the new bucket
-        for (size_t i = newBucketIndex + (1 << localDepth); i < (1 << globalDepth); i += (1 << localDepth)) {
+        for (size_t i = newBucketIndex + (1 << localDepth); i < ((size_t)1 << globalDepth); i += (1 << localDepth)) {
             directories[i] = directories[newBucketIndex];
         }
     }
@@ -111,7 +111,7 @@ template <typename T> class ExtensibleHashing {
     ExtensibleHashing(const std::string &directoryPath, size_t bucketSize, size_t initialGlobalDepth)
         : globalDepth(initialGlobalDepth), bucketDirectory(directoryPath), maxBucketSize(bucketSize) {
         // Initialize the directory with empty buckets
-        for (size_t i = 0; i < (1 << globalDepth); ++i) {
+        for (size_t i = 0; i < ((size_t)1 << globalDepth); ++i) {
             std::string bucketPath = bucketDirectory + "/bucket_" + std::to_string(i) + ".dat";
             directories[i] = std::make_shared<DirectoryEntry>(
                 DirectoryEntry{std::make_shared<Bucket<T>>(bucketPath, maxBucketSize), globalDepth, i});

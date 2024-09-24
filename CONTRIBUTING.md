@@ -9,12 +9,3 @@ git submodule update --init
 cd clang-format-hooks && ./git-pre-commit-format install
 ```
 
-## Clangd
-
-Build project for the first time, to add create build symbols
-
-```sh
-mkdir build
-cmake -S . -B build
-cmake --build build -j <number of jobs>
-```

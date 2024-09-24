@@ -36,12 +36,6 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/fmtlib/fmt.git
   GIT_TAG 11.0.2)
 
-FetchContent_Declare(
-  protobuf
-  GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
-  GIT_TAG v28.2
-  SOURCE_SUBDIR cmake FIND_PACKAGE_ARGS NAMES protobuf)
-
 # It's better to move to 'test/'
 FetchContent_Declare(
   googletest
@@ -55,7 +49,7 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/google/benchmark.git
   GIT_TAG v1.9.0)
 
-FetchContent_MakeAvailable(fmt protobuf googletest googlebenchmark)
+FetchContent_MakeAvailable(fmt googletest googlebenchmark)
 
 # CCache
 find_program(CCACHE_FOUND ccache)
