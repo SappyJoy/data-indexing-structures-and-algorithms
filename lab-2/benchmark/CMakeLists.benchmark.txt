@@ -1,6 +1,6 @@
 # Function that provide simple adding benchmarks
 function(ADD_BENCHMARK BENCH_NAME)
   add_executable(${BENCH_NAME} ${BENCH_NAME}.cpp)
-  target_link_libraries(${BENCH_NAME} benchmark::benchmark ${PROJECT_NAME}_lib)
+  target_link_libraries(${BENCH_NAME} benchmark::benchmark ${PROJECT_NAME}_lib faiss OpenMP::OpenMP_CXX)
   target_include_directories(${BENCH_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/include)
 endfunction()

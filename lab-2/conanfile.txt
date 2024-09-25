@@ -1,5 +1,9 @@
 [requires]
 protobuf/5.27.0
+openblas/0.3.20
+
+[options]
+openblas/0.3.27:shared=False
 
 [tool_requires]
 protobuf/5.27.0
