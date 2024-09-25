@@ -1,20 +1,24 @@
 #ifndef POINT_HPP
 #define POINT_HPP
 
-#include <cstddef>
 #include <vector>
 
 namespace kdtree {
 
 class Point {
-  public:
-    Point(const std::vector<double> &coordinates);
-    double get_coordinate(std::size_t index) const;
-    size_t dimension() const;
-    // Euclidean distance
-    double distance_to(const Point &other) const;
+public:
+    Point();
+    explicit Point(const std::vector<float>& coordinates);
 
-  private:
+    // Accessors
+    float operator[](std::size_t index) const;
+    float& operator[](std::size_t index);
+    std::size_t dimension() const;
+
+    // Conversion to raw data pointer (for FAISS)
+    const float* data() const;
+
+private:
     std::vector<double> coordinates_;
 };
 
