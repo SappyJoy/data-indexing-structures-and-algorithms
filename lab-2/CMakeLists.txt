@@ -44,6 +44,17 @@ set(FAISS_USE_OPENMP
     ON
     CACHE BOOL "" FORCE)
 
+if (UNIX)
+    if (EXISTS "/usr/lib/x86_64-linux-gnu/lapack/liblapack.so")
+        # Likely Ubuntu
+        set(LAPACK_LIBRARIES "/usr/lib/x86_64-linux-gnu/lapack/liblapack.so" CACHE STRING "" FORCE)
+        set(LAPACK_INCLUDE_DIR "/usr/include" CACHE STRING "" FORCE)
+    else()
+        # Other UNIX-like system, rely on CMake to find LAPACK
+        message(STATUS "Assuming LAPACK is installed in standard locations")
+    endif()
+endif()
+
 # BLAS-related options
 set(BLA_VENDOR
     "OpenBLAS"
