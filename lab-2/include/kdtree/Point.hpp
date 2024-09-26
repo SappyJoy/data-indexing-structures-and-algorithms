@@ -6,20 +6,20 @@
 namespace kdtree {
 
 class Point {
-public:
-    Point();
-    explicit Point(const std::vector<float>& coordinates);
+  public:
+    Point() = delete;
+    explicit Point(const std::vector<float> &coordinates);
 
     // Accessors
     float operator[](std::size_t index) const;
-    float& operator[](std::size_t index);
+    float &operator[](std::size_t index);
     std::size_t dimension() const;
 
     // Conversion to raw data pointer (for FAISS)
-    const float* data() const;
+    const float *data() const;
 
-private:
-    std::vector<double> coordinates_;
+  private:
+    std::vector<float> coordinates_;
 };
 
 } // namespace kdtree

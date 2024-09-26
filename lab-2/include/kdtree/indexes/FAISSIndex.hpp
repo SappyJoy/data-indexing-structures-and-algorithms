@@ -2,25 +2,35 @@
 #define FAISS_INDEX_HPP
 
 #include "Index.hpp"
-#include <faiss/IndexFlat.h>
-#include <vector>
+#include "kdtree/Point.hpp"
+#include <faiss/IndexFlat.h> // Adjust based on the FAISS index you choose
+#include <memory>
 
-namespace index {
+namespace kdtree {
 
 class FAISSIndex : public Index {
-public:
-    FAISSIndex(size_t dimension);
+  public:
+    FAISSIndex();
+    ~FAISSIndex() override;
 
-    void build(const std::vector<Point>& points) override;
-    void insert(const Point& point) override;
-    std::vector<Point> nearest_neighbors(const Point& query, size_t k) const override;
-    std::vector<Point> range_search(const Point& query, double radius) const override;
+    // Build the FAISS index with a set of points
+    void build(const std::vector<Point> &points) override;
 
-private:
+    // Insert a single point into the FAISS index
+    void insert(const Point &point) override;
+
+    // Find k nearest neighbors using FAISS
+    std::vector<Point> nearest_neighbors(const Point &query, size_t k) const override;
+
+    // Range search is not directly supported by FAISS's basic indices
+    std::vector<Point> range_search(const Point &query, double radius) const override;
+
+  private:
+    std::unique_ptr<faiss::IndexFlatL2> faiss_index_;
     size_t dimension_;
-    faiss::IndexFlatL2 index_;
+    std::vector<Point> points_; // Store points to retrieve by label
 };
 
-}  // namespace index
+} // namespace kdtree
 
 #endif

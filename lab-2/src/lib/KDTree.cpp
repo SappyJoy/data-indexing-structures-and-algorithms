@@ -1,113 +1,178 @@
 #include "kdtree/KDTree.hpp"
+#include "kdtree/KDNode.hpp"
+#include <algorithm>
 #include <cmath>
-#include <limits>
 #include <stdexcept>
 
 namespace kdtree {
 
-// Конструктор KD-дерева
-KDTree::KDTree(size_t dimension) : root_(nullptr), dimension_(dimension) {
-    if (dimension == 0) {
-        throw std::invalid_argument("Dimension must be greater than zero");
+// Constructor: Default
+KDTree::KDTree() : root_(nullptr), dimension_(0) {}
+
+// Constructor: Build tree from points
+KDTree::KDTree(const std::vector<Point> &points) : root_(nullptr), dimension_(0) { build(points); }
+
+// Build the KD-tree from a set of points
+void KDTree::build(const std::vector<Point> &points) {
+    if (points.empty()) {
+        throw std::invalid_argument("Point set is empty.");
     }
+    dimension_ = points[0].dimension();
+    // Verify all points have the same dimension
+    for (const auto &point : points) {
+        if (point.dimension() != dimension_) {
+            throw std::invalid_argument("All points must have the same dimension.");
+        }
+    }
+    std::vector<Point> points_copy = points;
+    root_ = build_tree(points_copy.begin(), points_copy.end(), 0);
 }
 
-// Вставка точки в дерево
+// Insert a single point into the KD-tree
 void KDTree::insert(const Point &point) {
-    if (point.dimension() != dimension_) {
-        throw std::invalid_argument("Dimension of the point must match the dimension of the tree");
+    if (dimension_ == 0) {
+        dimension_ = point.dimension();
+    } else if (point.dimension() != dimension_) {
+        throw std::invalid_argument("Point dimensionality does not match KD-tree.");
     }
-    root_.reset(insert_recursive(root_.release(), point, 0));
+    root_ = insert_point(root_, point, 0);
 }
 
-// Вспомогательная рекурсивная функция для вставки
-Node *KDTree::insert_recursive(Node *node, const Point &point, size_t depth) {
-    if (node == nullptr) {
-        return new Node(point);
+// k-Nearest Neighbors search
+std::vector<Point> KDTree::nearest_neighbors(const Point &query, size_t k) const {
+    if (k == 0) {
+        return {};
     }
-
-    size_t axis = depth % dimension_; // Определяем ось по глубине
-
-    if (point.get_coordinate(axis) < node->get_point().get_coordinate(axis)) {
-        node->left = insert_recursive(node->left, point, depth + 1);
-    } else {
-        node->right = insert_recursive(node->right, point, depth + 1);
-    }
-
-    return node;
-}
-
-// Поиск ближайшего соседа
-Point KDTree::nearest_neighbor(const Point &target) const {
     if (!root_) {
-        throw std::runtime_error("Tree is empty");
+        return {};
     }
 
-    double best_distance = std::numeric_limits<double>::max();
-    Node *best = nearest_neighbor_recursive(root_.get(), target, 0, nullptr, best_distance);
+    // Create the priority queue with the comparator struct
+    std::priority_queue<std::pair<double, Point>, std::vector<std::pair<double, Point>>, CompareDistance> best_points;
 
-    if (!best) {
-        throw std::runtime_error("Failed to find nearest neighbor");
+    // Perform the recursive search
+    nearest_neighbors(root_, query, k, best_points);
+
+    // Extract points from the heap
+    std::vector<Point> result;
+    result.reserve(best_points.size());
+    while (!best_points.empty()) {
+        result.emplace_back(std::move(best_points.top().second));
+        best_points.pop();
     }
-    return best->get_point();
+
+    // Reverse to have closest points first
+    std::reverse(result.begin(), result.end());
+
+    return result;
 }
 
-// Вспомогательная рекурсивная функция для поиска ближайшего соседа
-Node *KDTree::nearest_neighbor_recursive(Node *node, const Point &target, size_t depth, Node *best,
-                                         double &best_distance) const {
-    if (!node)
-        return best;
-
-    double distance_to_node = distance(node->get_point(), target);
-    if (distance_to_node < best_distance) {
-        best_distance = distance_to_node;
-        best = node;
+// Range search
+std::vector<Point> KDTree::range_search(const Point &query, double radius) const {
+    if (!root_) {
+        return {};
     }
-
-    size_t axis = depth % dimension_;
-    double diff = target.get_coordinate(axis) - node->get_point().get_coordinate(axis);
-
-    Node *near_subtree = (diff < 0) ? node->left : node->right;
-    Node *far_subtree = (diff < 0) ? node->right : node->left;
-
-    best = nearest_neighbor_recursive(near_subtree, target, depth + 1, best, best_distance);
-
-    if (std::fabs(diff) < best_distance) {
-        best = nearest_neighbor_recursive(far_subtree, target, depth + 1, best, best_distance);
-    }
-
-    return best;
-}
-
-// Поиск точек в пределах заданной области (BoundingBox)
-std::vector<Point> KDTree::range_search(const BoundingBox &bounds) const {
     std::vector<Point> results;
-    if (root_) {
-        range_search_recursive(root_.get(), bounds, results, 0);
-    }
+    range_search(root_, query, radius, results);
     return results;
 }
 
-// Вспомогательная рекурсивная функция для поиска по диапазону
-void KDTree::range_search_recursive(Node *node, const BoundingBox &bounds, std::vector<Point> &results,
-                                    size_t depth) const {
-    if (!node)
-        return;
-
-    if (bounds.contains(node->get_point())) {
-        results.push_back(node->get_point());
+// Private helper function to build the tree recursively
+std::shared_ptr<KDNode> KDTree::build_tree(std::vector<Point>::iterator begin, std::vector<Point>::iterator end,
+                                           size_t depth) {
+    if (begin >= end) {
+        return nullptr;
     }
-
     size_t axis = depth % dimension_;
-    if (bounds.get_lower_bound().get_coordinate(axis) <= node->get_point().get_coordinate(axis)) {
-        range_search_recursive(node->left, bounds, results, depth + 1);
+    // Sort points along the current axis
+    auto comparator = [axis](const Point &a, const Point &b) { return a[axis] < b[axis]; };
+    auto mid = begin + (end - begin) / 2;
+    std::nth_element(begin, mid, end, comparator);
+    // Create node and construct subtrees
+    auto node = std::make_shared<KDNode>(*mid, axis);
+    node->set_left(build_tree(begin, mid, depth + 1));
+    node->set_right(build_tree(mid + 1, end, depth + 1));
+    return node;
+}
+
+// Private helper function to insert a point into the tree
+std::shared_ptr<KDNode> KDTree::insert_point(std::shared_ptr<KDNode> node, const Point &point, size_t depth) {
+    if (!node) {
+        size_t axis = depth % dimension_;
+        return std::make_shared<KDNode>(point, axis);
     }
-    if (bounds.get_upper_bound().get_coordinate(axis) >= node->get_point().get_coordinate(axis)) {
-        range_search_recursive(node->right, bounds, results, depth + 1);
+    size_t axis = node->axis();
+    if (point[axis] < node->point()[axis]) {
+        node->set_left(insert_point(node->left(), point, depth + 1));
+    } else {
+        node->set_right(insert_point(node->right(), point, depth + 1));
+    }
+    return node;
+}
+
+// Private helper function for k-NN search
+void KDTree::nearest_neighbors(const std::shared_ptr<KDNode> &node, const Point &query, size_t k,
+                               std::priority_queue<std::pair<double, Point>, std::vector<std::pair<double, Point>>,
+                                                   CompareDistance> &best_points) const {
+    if (!node) {
+        return;
+    }
+
+    // Compute distance between query and current node
+    double dist = distance(query, node->point());
+
+    if (best_points.size() < k) {
+        best_points.emplace(dist, node->point());
+    } else if (dist < best_points.top().first) {
+        best_points.pop();
+        best_points.emplace(dist, node->point());
+    }
+
+    // Decide which subtree to search first
+    size_t axis = node->axis();
+    bool go_left = query[axis] < node->point()[axis];
+
+    const auto &first_branch = go_left ? node->left() : node->right();
+    const auto &second_branch = go_left ? node->right() : node->left();
+
+    // Search the first branch
+    nearest_neighbors(first_branch, query, k, best_points);
+
+    // Determine if we need to search the opposite branch
+    if (best_points.size() < k || std::abs(query[axis] - node->point()[axis]) < best_points.top().first) {
+        nearest_neighbors(second_branch, query, k, best_points);
     }
 }
 
-// Вычисление евклидова расстояния между двумя точками
-double KDTree::distance(const Point &a, const Point &b) const { return a.distance_to(b); }
+// Private helper function for range search
+void KDTree::range_search(const std::shared_ptr<KDNode> &node, const Point &query, double radius,
+                          std::vector<Point> &results) const {
+    if (!node) {
+        return;
+    }
+    // Compute distance between query and current node
+    double dist = distance(query, node->point());
+    if (dist <= radius) {
+        results.push_back(node->point());
+    }
+    // Decide whether to search left, right, or both subtrees
+    size_t axis = node->axis();
+    if (query[axis] - radius <= node->point()[axis]) {
+        range_search(node->left(), query, radius, results);
+    }
+    if (query[axis] + radius >= node->point()[axis]) {
+        range_search(node->right(), query, radius, results);
+    }
+}
+
+// Euclidean distance between two points
+double KDTree::distance(const Point &a, const Point &b) const {
+    double dist = 0.0;
+    for (size_t i = 0; i < dimension_; ++i) {
+        double diff = static_cast<double>(a[i]) - static_cast<double>(b[i]);
+        dist += diff * diff;
+    }
+    return std::sqrt(dist);
+}
 
 } // namespace kdtree

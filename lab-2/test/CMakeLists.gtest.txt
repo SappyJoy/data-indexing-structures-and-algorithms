@@ -1,12 +1,22 @@
 set(UNIT_UNDER_TEST_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
-# Function that provide simple adding Unit Tests
-function(ADD_GTEST TEST_NAME)
-  add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
-  target_include_directories(${TEST_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/include ${Protobuf_INCLUDE_DIRS})
-  target_include_directories(${TEST_NAME} PUBLIC ${UNIT_UNDER_TEST_INCLUDE_DIR} )
-  # target_link_libraries(${TEST_NAME} gtest gtest_main gmock gmock_main ${PROJECT_NAME}_lib Node Relationship ${Protobuf_LIBRARIES})
-  # target_link_libraries(${TEST_NAME} gtest gtest_main gmock gmock_main ${PROJECT_NAME}_lib protobuf_objects)
-  target_link_libraries(${TEST_NAME} gtest gtest_main gmock gmock_main ${PROJECT_NAME}_lib)
-  add_test(${TEST_NAME} ${TEST_NAME})
+# Function to add a Google Test executable
+  function(ADD_GTEST TEST_NAME TEST_SRC)
+add_executable(${TEST_NAME} ${TEST_SRC})
+
+  target_include_directories(${TEST_NAME} PUBLIC 
+      ${PROJECT_SOURCE_DIR}/include 
+      ${UNIT_UNDER_TEST_INCLUDE_DIR}
+      )
+
+  target_link_libraries(${TEST_NAME} 
+      PRIVATE 
+      gtest 
+      gtest_main 
+      gmock 
+      gmock_main 
+      ${PROJECT_NAME}_lib
+      )
+
+add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endfunction()

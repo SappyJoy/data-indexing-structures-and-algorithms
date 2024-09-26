@@ -1,5 +1,5 @@
-#ifndef NODE_HPP
-#define NODE_HPP
+#ifndef KDNODE_HPP
+#define KDNODE_HPP
 
 #include "kdtree/Point.hpp"
 #include <memory>
@@ -7,12 +7,12 @@
 namespace kdtree {
 
 class KDNode {
-public:
+  public:
     // Constructors
-    KDNode(const Point& point, size_t axis);
+    KDNode(const Point &point, size_t axis);
 
     // Accessors
-    const Point& point() const;
+    const Point &point() const;
     size_t axis() const;
     std::shared_ptr<KDNode> left() const;
     std::shared_ptr<KDNode> right() const;
@@ -21,13 +21,13 @@ public:
     void set_left(std::shared_ptr<KDNode> left);
     void set_right(std::shared_ptr<KDNode> right);
 
-private:
+  private:
     Point point_;
     size_t axis_;
     std::shared_ptr<KDNode> left_;
     std::shared_ptr<KDNode> right_;
 };
 
-}  // namespace kdtree
+} // namespace kdtree
 
 #endif
