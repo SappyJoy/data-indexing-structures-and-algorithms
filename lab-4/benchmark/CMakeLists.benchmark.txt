@@ -1,0 +1,22 @@
+# Find the Benchmark library
+# find_package(benchmark REQUIRED)
+
+# Function to add a Benchmark executable
+  function(ADD_BENCHMARK BENCH_NAME BENCH_SRC)
+add_executable(${BENCH_NAME} ${BENCH_SRC})
+
+# Include directories for the benchmark
+  target_include_directories(${BENCH_NAME} PUBLIC 
+      ${CMAKE_SOURCE_DIR}/include
+      )
+
+# Link necessary libraries
+  target_link_libraries(${BENCH_NAME} 
+      PRIVATE 
+      benchmark::benchmark 
+      ${PROJECT_NAME}_lib 
+      )
+
+# Register the benchmark with CTest (optional)
+add_test(NAME ${BENCH_NAME} COMMAND ${BENCH_NAME})
+endfunction()
