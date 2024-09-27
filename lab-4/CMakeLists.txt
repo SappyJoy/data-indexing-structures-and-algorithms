@@ -17,9 +17,9 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 # Better set this in the command line
-# set(CMAKE_BUILD_TYPE
-#     "Release"
-#     CACHE STRING "" FORCE)
+set(CMAKE_BUILD_TYPE
+    "Release"
+    CACHE STRING "" FORCE)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
