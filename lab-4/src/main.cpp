@@ -1,5 +1,6 @@
 #include "inverted_index/InvertedIndex.hpp"
 #include "inverted_index/StorageManager.hpp"
+#include "inverted_index/QueryProcessor.hpp"
 #include "log/Logger.hpp"
 #include <iostream>
 
@@ -67,6 +68,31 @@ int main() {
         }
         else {
             LOG_INFO("Term '{}' not found in any document.", term);
+        }
+    }
+
+    // Initialize QueryProcessor
+    QueryProcessor query_processor(loaded_index);
+
+    // Sample queries
+    std::vector<std::string> queries = {
+        "hello AND document",
+        "quick OR lazy",
+        "C++ AND NOT fox",
+        "programming OR (hello AND NOT world)"
+    };
+
+    for (const auto& query : queries) {
+        try {
+            auto results = query_processor.executeQuery(query);
+            std::cout << "Query: \"" << query << "\" found in documents: ";
+            for (const auto& doc_id : results) {
+                std::cout << doc_id << " ";
+            }
+            std::cout << "\n";
+            LOG_INFO("Executed query: '{}', found in {} documents.", query, results.size());
+        } catch (const std::exception& e) {
+            LOG_ERROR("Failed to execute query '{}': {}", query, e.what());
         }
     }
 

@@ -75,6 +75,12 @@ class InvertedIndex {
      */
     void insertSkips(const std::string& term, const std::vector<SkipPointer>& skips);
 
+    /**
+     * @brief Retrieves the total number of documents indexed.
+     *
+     * @return The total document count.
+     */
+    int getTotalDocuments() const;
 
   private:
     // Mapping from term to its compressed posting list (vector of bytes)
@@ -85,6 +91,8 @@ class InvertedIndex {
 
     // Mutex for thread-safe access to the index and skiplists
     mutable std::shared_mutex mutex_;
+
+    int total_documents_;
 
     /**
      * @brief Tokenizes a normalized text into individual terms based on whitespace.

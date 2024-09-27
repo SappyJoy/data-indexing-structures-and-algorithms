@@ -8,7 +8,7 @@
 
 namespace inverted_index {
 
-InvertedIndex::InvertedIndex() {
+InvertedIndex::InvertedIndex() : total_documents_(0) {
     LOG_DEBUG("InvertedIndex initialized with pForDelta compression and Skiplists.");
 }
 
@@ -88,6 +88,7 @@ void InvertedIndex::addDocument(int doc_id, const std::string &text) {
             continue;
         }
     }
+    ++total_documents_;
 
     LOG_INFO("Document ID {} added successfully.", doc_id);
 }
@@ -139,11 +140,18 @@ const Skiplists& InvertedIndex::getSkiplists() const {
 }
 
 void InvertedIndex::insertTerm(const std::string& term, const std::vector<uint8_t>& compressed_posting) {
+    std::unique_lock lock(mutex_);
     index_[term] = compressed_posting;
 }
 
 void InvertedIndex::insertSkips(const std::string& term, const std::vector<SkipPointer>& skips) {
+    std::unique_lock lock(mutex_);
     skiplists_.addSkipPointers(term, skips); // Implement a method to add multiple skips
+}
+
+int InvertedIndex::getTotalDocuments() const {
+    std::shared_lock lock(mutex_);
+    return total_documents_;
 }
 
 } // namespace inverted_index
