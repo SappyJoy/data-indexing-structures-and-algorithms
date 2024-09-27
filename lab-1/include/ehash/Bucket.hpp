@@ -1,101 +1,87 @@
 #ifndef BUCKET_HPP
 #define BUCKET_HPP
 
+#include "log/Logger.hpp"
 #include <fstream>
 #include <google/protobuf/message.h>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <sys/statvfs.h>
+#include <unordered_map>
 #include <vector>
 
 namespace ehash {
 
-// Default block size (4KB)
-// const size_t DEFAULT_BLOCK_SIZE = 4096;
-
-// Helper function to check if a file exists
-bool fileExists(const std::string &path) {
-    std::ifstream file(path);
-    return file.good();
-}
-
-// Helper function to get filesystem block size for a given path
-size_t getBlockSize(const std::string &path) {
-    struct statvfs stat;
-    if (statvfs(path.c_str(), &stat) == 0) {
-        return stat.f_bsize; // Return block size
-    } else {
-        throw std::runtime_error("Unable to get block size for path: " + path);
-    }
-}
-
-// Create the file if it doesn't exist, and open it
-void createFileIfNotExists(const std::string &path) {
-    // std::cout << "createFileIfNotExists" << std::endl;
-    if (!fileExists(path)) {
-        std::ofstream file(path);
-        if (!file) {
-            throw std::runtime_error("Failed to create bucket file: " + path);
-        }
-        file.close();
-    }
-    // std::cout << "File EXISTS" << std::endl;
-}
-
-// Generic Bucket class for storing any Protobuf objects
 template <typename T> class Bucket {
     static_assert(std::is_base_of<google::protobuf::Message, T>::value,
                   "T must be a subclass of google::protobuf::Message");
 
   private:
-    std::string filePath;                    // Path to the file where the bucket is stored
-    size_t blockSize;                        // Filesystem block size (e.g., 4KB)
-    size_t maxBucketSize;                    // Maximum size of the bucket (a multiple of block size)
-    std::vector<std::unique_ptr<T>> entries; // Deserialized objects in memory
-    std::size_t currentSize = 0;             // Current size of the bucket
+    std::string filePath;
+    size_t blockSize;
+    size_t maxBucketSize;
+    std::vector<std::unique_ptr<T>> entries;
+    std::size_t currentSize = 0;
+    bool isDirty = false;
+    std::unordered_map<size_t, T *> hashMap;
+    mutable std::mutex mtx;
 
-    // Internal method to serialize and write to disk
     void writeToDisk() {
-        std::ofstream outFile(filePath, std::ios::binary | std::ios::trunc);
+        std::lock_guard<std::mutex> lock(mtx);
+        std::string tempFilePath = filePath + ".tmp";
+        std::ofstream outFile(tempFilePath, std::ios::binary | std::ios::trunc);
         if (!outFile) {
-            throw std::runtime_error("Failed to open file for writing: " + filePath);
+            Logger::error("Failed to open temp file for writing: {}", tempFilePath);
+            throw std::runtime_error("Failed to open temp file for writing: " + tempFilePath);
         }
 
-        size_t currentSize = 0;
+        size_t currentSizeLocal = 0;
         for (const auto &entry : entries) {
             std::string serializedEntry;
             entry->SerializeToString(&serializedEntry);
             size_t entrySize = serializedEntry.size();
+            size_t entryHash = hashKey(keyExtractor(*entry));
 
-            // Check if adding this entry would exceed the bucket's size limit
-            if (currentSize + sizeof(int) + entrySize > maxBucketSize) {
+            if (currentSizeLocal + sizeof(int) + entrySize > maxBucketSize) {
                 throw std::runtime_error("Bucket overflow: adding entry exceeds max bucket size");
             }
 
-            outFile.write(reinterpret_cast<const char *>(&entrySize), sizeof(int)); // Write size of entry
-            outFile.write(serializedEntry.data(), entrySize);                       // Write serialized data
-            currentSize += sizeof(int) + entrySize;                                 // Update current bucket size
+            outFile.write(reinterpret_cast<const char *>(&entrySize), sizeof(int));
+            outFile.write(serializedEntry.data(), entrySize);
+            currentSizeLocal += sizeof(int) + entrySize;
         }
 
-        // Pad the rest of the bucket to ensure it's a multiple of the block size
-        size_t padding = maxBucketSize - currentSize;
+        // Padding
+        size_t padding = maxBucketSize - currentSizeLocal;
         std::string paddingData(padding, '\0');
         outFile.write(paddingData.data(), padding);
         outFile.close();
+
+        // Atomic replace
+        if (std::rename(tempFilePath.c_str(), filePath.c_str()) != 0) {
+            Logger::error("Failed to rename temp file to: {}", filePath);
+            throw std::runtime_error("Failed to rename temp file to: " + filePath);
+        }
+
+        currentSize = currentSizeLocal;
+        isDirty = false;
     }
 
-    // Internal method to read and deserialize from disk
     void readFromDisk() {
+        std::lock_guard<std::mutex> lock(mtx);
         std::ifstream inFile(filePath, std::ios::binary);
         if (!inFile) {
+            Logger::error("Failed to open file for reading: {}", filePath);
             throw std::runtime_error("Failed to open file for reading: " + filePath);
         }
 
         entries.clear();
-        size_t currentSize = 0;
-        while (currentSize < maxBucketSize && !inFile.eof()) {
+        hashMap.clear();
+        size_t currentSizeLocal = 0;
+        while (currentSizeLocal < maxBucketSize && !inFile.eof()) {
             int entrySize = 0;
             inFile.read(reinterpret_cast<char *>(&entrySize), sizeof(int));
             if (inFile.eof())
@@ -106,111 +92,127 @@ template <typename T> class Bucket {
             if (inFile.eof())
                 break;
 
-            // Create a new instance of T (a Protobuf Message)
             std::unique_ptr<T> entry(new T());
             if (!entry->ParseFromString(serializedEntry)) {
+                Logger::error("Failed to parse protobuf object in file: {}", filePath);
                 throw std::runtime_error("Failed to parse protobuf object");
             }
+
+            size_t entryHash = hashKey(keyExtractor(*entry));
+            hashMap[entryHash] = entry.get();
             entries.push_back(std::move(entry));
-            currentSize += sizeof(int) + entrySize;
+            currentSizeLocal += sizeof(int) + entrySize;
         }
 
+        currentSize = currentSizeLocal;
         inFile.close();
     }
 
   public:
-    // Constructor to initialize the bucket with file path and maximum size
-    Bucket(const std::string &path, size_t maxSize) : filePath(path), currentSize(0) {
-        // Create the file if it doesn't exist
+    // Key extractor function
+    std::function<std::string(const T &)> keyExtractor;
+
+    // Constructor
+    Bucket(const std::string &path, size_t maxSize, std::function<std::string(const T &)> extractor)
+        : filePath(path), keyExtractor(extractor) {
         createFileIfNotExists(path);
-
-        // Now safely get the block size
         blockSize = getBlockSize(path);
-
-        // Ensure maxBucketSize is a multiple of the block size
         maxBucketSize = ((maxSize / blockSize) + 1) * blockSize;
         if (maxBucketSize < blockSize) {
             throw std::runtime_error("Max bucket size must be at least one block size");
         }
-
-        readFromDisk(); // Load objects into memory when bucket is initialized
+        readFromDisk();
     }
 
-    ~Bucket() = default;
+    ~Bucket() {
+        try {
+            persist();
+        } catch (const std::exception &e) {
+            Logger::error("Bucket destructor failed: {}", e.what());
+        }
+    }
 
-    // Add a new Protobuf entry to the bucket
     bool addEntry(std::unique_ptr<T> entry) {
-        // std::cout << "Adding entry to bucket" << std::endl;
+        std::lock_guard<std::mutex> lock(mtx);
+        std::string key = keyExtractor(*entry);
+        size_t entryHash = hashKey(key);
+
+        if (hashMap.find(entryHash) != hashMap.end()) {
+            return false; // Duplicate key
+        }
+
         std::string serializedEntry;
         entry->SerializeToString(&serializedEntry);
         size_t entrySize = serializedEntry.size();
 
-        // If the entry itself is larger than the maximum bucket size, throw an error
-        if (entrySize > maxBucketSize) {
-            throw std::runtime_error("Entry size exceeds maximum bucket size");
-        }
-
         if (currentSize + sizeof(int) + entrySize > maxBucketSize) {
-            return false; // Bucket full, cannot add more entries
+            return false; // Bucket full
         }
 
+        hashMap[entryHash] = entry.get();
         entries.push_back(std::move(entry));
         currentSize += sizeof(int) + entrySize;
-        writeToDisk(); // Persist to disk after modification
+        isDirty = true;
         return true;
     }
 
-    bool canAddEntry(std::size_t entrySize) const { return currentSize + sizeof(int) + entrySize <= maxBucketSize; }
+    bool canAddEntry(std::size_t entrySize) const { return (currentSize + sizeof(int) + entrySize) <= maxBucketSize; }
 
     bool hasKey(const std::string &key) const {
-        for (const auto &entry : entries) {
-            std::string serializedKey;
-            entry->SerializeToString(&serializedKey);
-            if (key == serializedKey) {
-                return true;
-            }
-        }
-        return false;
+        size_t entryHash = hashKey(key);
+        std::lock_guard<std::mutex> lock(mtx);
+        return hashMap.find(entryHash) != hashMap.end();
     }
 
     void updateEntry(std::unique_ptr<T> newEntry) {
-        std::string serializedKey;
-        newEntry->SerializeToString(&serializedKey);
+        std::lock_guard<std::mutex> lock(mtx);
+        std::string key = keyExtractor(*newEntry);
+        size_t entryHash = hashKey(key);
 
-        for (auto &entry : entries) {
-            std::string existingKey;
-            entry->SerializeToString(&existingKey);
-
-            if (existingKey == serializedKey) {
-                entry = std::move(newEntry); // Replace the existing entry
-                return;
+        auto it = hashMap.find(entryHash);
+        if (it != hashMap.end()) {
+            // Find and replace the entry
+            for (auto &entry : entries) {
+                if (hashKey(keyExtractor(*entry)) == entryHash) {
+                    entry = std::move(newEntry);
+                    isDirty = true;
+                    break;
+                }
             }
         }
     }
 
-    // Retrieve all entries from the bucket
     const std::vector<std::unique_ptr<T>> &getEntries() const { return entries; }
 
     std::vector<std::unique_ptr<T>> retrieveEntries() { return std::move(entries); }
 
-    // Check if bucket is full
-    bool isFull() const {
-        size_t currentSize = 0;
-        for (const auto &entry : entries) {
-            std::string serializedEntry;
-            entry->SerializeToString(&serializedEntry);
-            currentSize += sizeof(int) + serializedEntry.size();
-        }
-        return currentSize >= maxBucketSize;
-    }
+    bool isFull() const { return currentSize >= maxBucketSize; }
 
     void clear() {
+        std::lock_guard<std::mutex> lock(mtx);
         entries.clear();
+        hashMap.clear();
         currentSize = 0;
-        writeToDisk();
+        isDirty = true;
+    }
+
+    void persist() {
+        if (isDirty) {
+            writeToDisk();
+        }
+    }
+
+    T *getEntry(size_t hash) const {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto it = hashMap.find(hash);
+        if (it != hashMap.end()) {
+            return it->second;
+        }
+        return nullptr;
     }
 
     void print() const {
+        std::lock_guard<std::mutex> lock(mtx);
         for (const auto &entry : entries) {
             std::cout << "Entry: " << entry->DebugString();
         }

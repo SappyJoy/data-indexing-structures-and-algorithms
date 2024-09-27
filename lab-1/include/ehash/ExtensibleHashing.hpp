@@ -1,6 +1,181 @@
 #ifndef EXTENSIBLEHASHING_HPP
 #define EXTENSIBLEHASHING_HPP
 
+#include "ehash/Bucket.hpp"
+#include "log/Logger.hpp"
+#include <functional>
+#include <google/protobuf/message.h>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <shared_mutex>
+#include <vector>
+
+namespace ehash {
+
+template <typename T> class ExtensibleHashing {
+    static_assert(std::is_base_of<google::protobuf::Message, T>::value,
+                  "T must be a subclass of google::protobuf::Message");
+
+  private:
+    size_t globalDepth;
+    struct DirectoryEntry {
+        std::shared_ptr<Bucket<T>> bucket;
+        size_t localDepth;
+        size_t rootBucketIndex;
+    };
+
+    std::vector<std::shared_ptr<DirectoryEntry>> directory;
+    std::string bucketDirectory;
+    size_t maxBucketSize;
+    std::function<std::string(const T &)> keyExtractor;
+    mutable std::shared_mutex dir_mtx;
+
+    size_t hashKey(const std::string &key) const { return std::hash<std::string>{}(key); }
+
+    size_t getHashPrefix(size_t hashValue, size_t depth) const { return hashValue & ((1 << depth) - 1); }
+
+    void splitBucket(size_t bucketIndex) {
+        std::unique_lock<std::shared_mutex> lock(dir_mtx);
+        auto oldBucketEntry = directory[bucketIndex];
+        size_t localDepth = oldBucketEntry->localDepth;
+        localDepth++;
+        oldBucketEntry->localDepth = localDepth;
+
+        size_t newBucketIndex = bucketIndex + (1 << (localDepth - 1));
+        std::string newBucketPath = bucketDirectory + "/bucket_" + std::to_string(newBucketIndex) + ".dat";
+        auto newBucket = std::make_shared<Bucket<T>>(newBucketPath, maxBucketSize, keyExtractor);
+
+        auto oldBucket = oldBucketEntry->bucket;
+        auto entries = oldBucket->retrieveEntries();
+        oldBucket->clear();
+
+        for (auto &entry : entries) {
+            std::string key = keyExtractor(*entry);
+            size_t hashValue = hashKey(key);
+            size_t newPrefix = getHashPrefix(hashValue, localDepth);
+            if (newPrefix == bucketIndex) {
+                oldBucket->addEntry(std::move(entry));
+            } else {
+                newBucket->addEntry(std::move(entry));
+            }
+        }
+
+        if (localDepth > globalDepth) {
+            globalDepth++;
+            size_t oldSize = directory.size();
+            directory.reserve(1 << globalDepth);
+            for (size_t i = 0; i < oldSize; ++i) {
+                directory.emplace_back(directory[i]);
+            }
+        }
+
+        auto newDirectoryEntry =
+            std::make_shared<DirectoryEntry>(DirectoryEntry{newBucket, localDepth, newBucketIndex});
+        directory[newBucketIndex] = newDirectoryEntry;
+
+        // Update all directory entries that should now point to the new bucket
+        size_t step = 1 << localDepth;
+        for (size_t i = newBucketIndex; i < directory.size(); i += step) {
+            directory[i] = newDirectoryEntry;
+        }
+
+        Logger::info("Bucket {} split into {}", bucketIndex, newBucketIndex);
+    }
+
+    size_t addEntryInternal(std::unique_ptr<T> entry, size_t hashValue) {
+        size_t bucketIndex = getHashPrefix(hashValue, globalDepth);
+        auto targetBucketEntry = directory[bucketIndex];
+        auto targetBucket = targetBucketEntry->bucket;
+
+        if (!targetBucket->canAddEntry(keyExtractor(*entry).size())) {
+            splitBucket(targetBucketEntry->rootBucketIndex);
+            return addEntryInternal(std::move(entry), hashValue);
+        }
+
+        targetBucket->addEntry(std::move(entry));
+        return hashValue;
+    }
+
+  public:
+    // Constructor
+    ExtensibleHashing(const std::string &directoryPath, size_t bucketSize,
+                      std::function<std::string(const T &)> extractor, size_t initialGlobalDepth = 1)
+        : globalDepth(initialGlobalDepth), bucketDirectory(directoryPath), maxBucketSize(bucketSize),
+          keyExtractor(extractor) {
+        size_t dirSize = 1 << globalDepth;
+        directory.reserve(dirSize);
+        for (size_t i = 0; i < dirSize; ++i) {
+            std::string bucketPath = bucketDirectory + "/bucket_" + std::to_string(i) + ".dat";
+            directory.emplace_back(std::make_shared<DirectoryEntry>(
+                DirectoryEntry{std::make_shared<Bucket<T>>(bucketPath, maxBucketSize, keyExtractor), 1, i}));
+        }
+    }
+
+    // Add entry to the hash table
+    size_t addEntry(std::unique_ptr<T> entry) {
+        std::string key = keyExtractor(*entry);
+        size_t hashValue = hashKey(key);
+        size_t bucketIndex;
+
+        {
+            std::shared_lock<std::shared_mutex> lock(dir_mtx);
+            bucketIndex = getHashPrefix(hashValue, globalDepth);
+            auto targetBucketEntry = directory[bucketIndex];
+            auto targetBucket = targetBucketEntry->bucket;
+
+            if (targetBucket->hasKey(key)) {
+                targetBucket->updateEntry(std::move(entry));
+                return hashValue;
+            }
+
+            if (!targetBucket->canAddEntry(key.size())) {
+                // Need to split the bucket
+            } else {
+                targetBucket->addEntry(std::move(entry));
+                return hashValue;
+            }
+        }
+
+        // If bucket needs splitting
+        return addEntryInternal(std::move(entry), hashValue);
+    }
+
+    // Retrieve all entries based on a key
+    const std::vector<std::unique_ptr<T>> &getEntries(const std::string &key) const {
+        size_t hashValue = hashKey(key);
+        size_t bucketIndex = getHashPrefix(hashValue, globalDepth);
+        std::shared_lock<std::shared_mutex> lock(dir_mtx);
+        return directory[bucketIndex]->bucket->getEntries();
+    }
+
+    // Retrieve a specific entry based on hash
+    std::optional<T *> getEntry(const size_t &hash) const {
+        std::shared_lock<std::shared_mutex> lock(dir_mtx);
+        size_t bucketIndex = getHashPrefix(hash, globalDepth);
+        return directory[bucketIndex]->bucket->getEntry(hash);
+    }
+
+    void print() const {
+        std::shared_lock<std::shared_mutex> lock(dir_mtx);
+        for (size_t i = 0; i < directory.size(); ++i) {
+            std::cout << "Bucket Index: " << i << " Depth: " << directory[i]->localDepth << " {" << std::endl;
+            directory[i]->bucket->print();
+            std::cout << "}" << std::endl;
+        }
+    }
+
+    size_t bucketCount() const {
+        std::shared_lock<std::shared_mutex> lock(dir_mtx);
+        return directory.size();
+    }
+};
+
+} // namespace ehash
+
+#endif
+#define EXTENSIBLEHASHING_HPP
+
 #include "Bucket.hpp"
 #include <google/protobuf/message.h>
 #include <iostream>
