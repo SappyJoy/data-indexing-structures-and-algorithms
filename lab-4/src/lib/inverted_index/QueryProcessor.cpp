@@ -1,15 +1,17 @@
 #include "inverted_index/QueryProcessor.hpp"
 #include "log/Logger.hpp"
-#include <sstream>
+#include <algorithm>
 #include <cctype>
+#include <stack>
 #include <stdexcept>
 
 namespace inverted_index {
 
-QueryProcessor::QueryProcessor(const InvertedIndex& index)
-    : index_(index) {}
+enum class ParserState { ExpectOperand, ExpectOperator };
 
-std::vector<int> QueryProcessor::executeQuery(const std::string& query) {
+QueryProcessor::QueryProcessor(const InvertedIndex &index) : index_(index) {}
+
+std::vector<int> QueryProcessor::executeQuery(const std::string &query) {
     LOG_DEBUG("Executing query: '{}'", query);
     auto tokens = tokenize(query);
     auto rpn = toRPN(tokens);
@@ -18,55 +20,119 @@ std::vector<int> QueryProcessor::executeQuery(const std::string& query) {
     return result;
 }
 
-std::vector<std::string> QueryProcessor::tokenize(const std::string& query) {
+std::vector<std::string> QueryProcessor::tokenize(const std::string &query) {
     LOG_DEBUG("Tokenizing query.");
     std::vector<std::string> tokens;
-    std::istringstream stream(query);
-    std::string token;
-    while (stream >> token) {
-        // Convert to uppercase for operators to handle case-insensitive operators
-        std::string upper_token;
-        std::transform(token.begin(), token.end(), std::back_inserter(upper_token), ::toupper);
-        if (upper_token == "AND" || upper_token == "OR" || upper_token == "NOT" ||
-            upper_token == "(" || upper_token == ")") {
-            tokens.emplace_back(upper_token);
+    std::string current_token;
+
+    // Iterate through each character to handle parentheses
+    for (size_t i = 0; i < query.size(); ++i) {
+        char c = query[i];
+
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            if (!current_token.empty()) {
+                tokens.push_back(current_token);
+                current_token.clear();
+            }
+        } else if (c == '(' || c == ')') {
+            if (!current_token.empty()) {
+                tokens.push_back(current_token);
+                current_token.clear();
+            }
+            tokens.emplace_back(std::string(1, c));
         } else {
-            // Assume the token is a term; normalize it (e.g., lowercase)
-            std::string normalized_term;
-            std::transform(token.begin(), token.end(), std::back_inserter(normalized_term), ::tolower);
-            tokens.emplace_back(normalized_term);
+            current_token += c;
         }
     }
-    LOG_DEBUG("Tokenized query into {} tokens.", tokens.size());
-    return tokens;
+
+    // Add the last token if any
+    if (!current_token.empty()) {
+        tokens.push_back(current_token);
+    }
+
+    // Process tokens: uppercase operators and lowercase terms
+    std::vector<std::string> processed_tokens;
+    for (const auto &tok : tokens) {
+        if (tok == "(" || tok == ")") {
+            // Parentheses are kept as-is
+            processed_tokens.emplace_back(tok);
+        } else {
+            // Convert token to uppercase to check for operators
+            std::string upper_token;
+            std::transform(tok.begin(), tok.end(), std::back_inserter(upper_token), ::toupper);
+
+            if (upper_token == "AND" || upper_token == "OR" || upper_token == "NOT") {
+                processed_tokens.emplace_back(upper_token);
+            } else {
+                // Normalize terms to lowercase
+                std::string normalized_term;
+                std::transform(tok.begin(), tok.end(), std::back_inserter(normalized_term), ::tolower);
+                processed_tokens.emplace_back(normalized_term);
+            }
+        }
+    }
+
+    LOG_DEBUG("Tokenized query into {} tokens.", processed_tokens.size());
+    return processed_tokens;
 }
 
-std::vector<std::string> QueryProcessor::toRPN(const std::vector<std::string>& tokens) {
+std::vector<std::string> QueryProcessor::toRPN(const std::vector<std::string> &tokens) {
     LOG_DEBUG("Converting tokens to Reverse Polish Notation.");
     std::vector<std::string> output;
     std::stack<std::string> op_stack;
 
     // Define operator precedence
-    auto precedence = [](const std::string& op) -> int {
-        if (op == "NOT") return 3;
-        if (op == "AND") return 2;
-        if (op == "OR") return 1;
+    auto precedence = [](const std::string &op) -> int {
+        if (op == "NOT")
+            return 3;
+        if (op == "AND")
+            return 2;
+        if (op == "OR")
+            return 1;
         return 0;
     };
 
-    for (const auto& token : tokens) {
+    // Initialize parser state
+    ParserState state = ParserState::ExpectOperand;
+
+    for (const auto &token : tokens) {
         if (token == "AND" || token == "OR" || token == "NOT") {
-            while (!op_stack.empty() && 
-                   precedence(op_stack.top()) >= precedence(token)) {
-                output.emplace_back(op_stack.top());
-                op_stack.pop();
+            if (token == "NOT") {
+                if (state != ParserState::ExpectOperand) {
+                    throw std::invalid_argument("Invalid query: 'NOT' operator in unexpected position.");
+                }
+                // 'NOT' is a unary operator; push to operator stack
+                while (!op_stack.empty() && precedence(op_stack.top()) >= precedence(token)) {
+                    output.emplace_back(op_stack.top());
+                    op_stack.pop();
+                }
+                op_stack.emplace(token);
+                // After a unary operator, still expect an operand
+                state = ParserState::ExpectOperand;
+            } else { // 'AND' or 'OR'
+                if (state != ParserState::ExpectOperator) {
+                    throw std::invalid_argument("Invalid query: Binary operator '" + token +
+                                                "' in unexpected position.");
+                }
+                while (!op_stack.empty() && precedence(op_stack.top()) >= precedence(token)) {
+                    output.emplace_back(op_stack.top());
+                    op_stack.pop();
+                }
+                op_stack.emplace(token);
+                // After a binary operator, expect an operand
+                state = ParserState::ExpectOperand;
+            }
+        } else if (token == "(") {
+            if (state != ParserState::ExpectOperand) {
+                throw std::invalid_argument("Invalid query: '(' in unexpected position.");
             }
             op_stack.emplace(token);
-        }
-        else if (token == "(") {
-            op_stack.emplace(token);
-        }
-        else if (token == ")") {
+            // After '(', expect an operand
+            state = ParserState::ExpectOperand;
+        } else if (token == ")") {
+            if (state != ParserState::ExpectOperator) {
+                throw std::invalid_argument("Invalid query: ')' in unexpected position.");
+            }
             while (!op_stack.empty() && op_stack.top() != "(") {
                 output.emplace_back(op_stack.top());
                 op_stack.pop();
@@ -75,13 +141,20 @@ std::vector<std::string> QueryProcessor::toRPN(const std::vector<std::string>& t
                 throw std::invalid_argument("Mismatched parentheses in query.");
             }
             op_stack.pop(); // Pop the '('
-        }
-        else {
+            // After ')', expect an operator
+            state = ParserState::ExpectOperator;
+        } else {
             // Token is a term
+            if (state != ParserState::ExpectOperand) {
+                throw std::invalid_argument("Invalid query: Term '" + token + "' in unexpected position.");
+            }
             output.emplace_back(token);
+            // After a term, expect an operator
+            state = ParserState::ExpectOperator;
         }
     }
 
+    // After processing all tokens, pop remaining operators
     while (!op_stack.empty()) {
         if (op_stack.top() == "(" || op_stack.top() == ")") {
             throw std::invalid_argument("Mismatched parentheses in query.");
@@ -90,11 +163,16 @@ std::vector<std::string> QueryProcessor::toRPN(const std::vector<std::string>& t
         op_stack.pop();
     }
 
+    // Final state should be ExpectOperator
+    if (state != ParserState::ExpectOperator) {
+        throw std::invalid_argument("Invalid query: Incomplete expression.");
+    }
+
     LOG_DEBUG("Converted to RPN with {} tokens.", output.size());
     return output;
 }
 
-std::vector<int> QueryProcessor::evaluateRPN(const std::vector<std::string>& rpn) {
+std::vector<int> QueryProcessor::evaluateRPN(const std::vector<std::string> &rpn) {
     LOG_DEBUG("Evaluating RPN.");
     std::stack<std::vector<int>> eval_stack;
     int total_docs = index_.getTotalDocuments();
@@ -103,12 +181,12 @@ std::vector<int> QueryProcessor::evaluateRPN(const std::vector<std::string>& rpn
         all_docs[i - 1] = i;
     }
 
-    for (const auto& token : rpn) {
+    for (const auto &token : rpn) {
         if (token == "AND" || token == "OR" || token == "NOT") {
             if (token == "NOT") {
                 // Unary operator
                 if (eval_stack.empty()) {
-                    throw std::invalid_argument("Invalid query: NOT operator with no operand.");
+                    throw std::invalid_argument("Invalid query: 'NOT' operator with no operand.");
                 }
                 auto operand = eval_stack.top();
                 eval_stack.pop();
@@ -119,11 +197,9 @@ std::vector<int> QueryProcessor::evaluateRPN(const std::vector<std::string>& rpn
                     if (all_docs[i] < operand[j]) {
                         result.emplace_back(all_docs[i]);
                         ++i;
-                    }
-                    else if (all_docs[i] > operand[j]) {
+                    } else if (all_docs[i] > operand[j]) {
                         ++j;
-                    }
-                    else {
+                    } else {
                         // Document is in operand; skip it
                         ++i;
                         ++j;
@@ -134,8 +210,7 @@ std::vector<int> QueryProcessor::evaluateRPN(const std::vector<std::string>& rpn
                     ++i;
                 }
                 eval_stack.emplace(result);
-            }
-            else {
+            } else {
                 // Binary operators: AND, OR
                 if (eval_stack.size() < 2) {
                     throw std::invalid_argument("Invalid query: Binary operator with insufficient operands.");
@@ -147,14 +222,12 @@ std::vector<int> QueryProcessor::evaluateRPN(const std::vector<std::string>& rpn
                 std::vector<int> result;
                 if (token == "AND") {
                     result = intersect(left, right);
-                }
-                else if (token == "OR") {
+                } else if (token == "OR") {
                     result = unionLists(left, right);
                 }
                 eval_stack.emplace(result);
             }
-        }
-        else {
+        } else {
             // Token is a term
             auto postings = index_.getPostings(token);
             std::sort(postings.begin(), postings.end());
@@ -169,7 +242,7 @@ std::vector<int> QueryProcessor::evaluateRPN(const std::vector<std::string>& rpn
     return eval_stack.top();
 }
 
-std::vector<int> QueryProcessor::intersect(const std::vector<int>& list1, const std::vector<int>& list2) {
+std::vector<int> QueryProcessor::intersect(const std::vector<int> &list1, const std::vector<int> &list2) {
     LOG_DEBUG("Performing intersection of two posting lists.");
     std::vector<int> result;
     size_t i = 0, j = 0;
@@ -178,11 +251,9 @@ std::vector<int> QueryProcessor::intersect(const std::vector<int>& list1, const 
             result.emplace_back(list1[i]);
             ++i;
             ++j;
-        }
-        else if (list1[i] < list2[j]) {
+        } else if (list1[i] < list2[j]) {
             ++i;
-        }
-        else {
+        } else {
             ++j;
         }
     }
@@ -190,7 +261,7 @@ std::vector<int> QueryProcessor::intersect(const std::vector<int>& list1, const 
     return result;
 }
 
-std::vector<int> QueryProcessor::unionLists(const std::vector<int>& list1, const std::vector<int>& list2) {
+std::vector<int> QueryProcessor::unionLists(const std::vector<int> &list1, const std::vector<int> &list2) {
     LOG_DEBUG("Performing union of two posting lists.");
     std::vector<int> result;
     size_t i = 0, j = 0;
@@ -199,12 +270,10 @@ std::vector<int> QueryProcessor::unionLists(const std::vector<int>& list1, const
             result.emplace_back(list1[i]);
             ++i;
             ++j;
-        }
-        else if (list1[i] < list2[j]) {
+        } else if (list1[i] < list2[j]) {
             result.emplace_back(list1[i]);
             ++i;
-        }
-        else {
+        } else {
             result.emplace_back(list2[j]);
             ++j;
         }
@@ -222,7 +291,7 @@ std::vector<int> QueryProcessor::unionLists(const std::vector<int>& list1, const
     return result;
 }
 
-std::vector<int> QueryProcessor::difference(const std::vector<int>& list1, const std::vector<int>& list2) {
+std::vector<int> QueryProcessor::difference(const std::vector<int> &list1, const std::vector<int> &list2) {
     LOG_DEBUG("Performing difference (list1 - list2) of two posting lists.");
     std::vector<int> result;
     size_t i = 0, j = 0;
@@ -230,12 +299,10 @@ std::vector<int> QueryProcessor::difference(const std::vector<int>& list1, const
         if (list1[i] == list2[j]) {
             ++i;
             ++j;
-        }
-        else if (list1[i] < list2[j]) {
+        } else if (list1[i] < list2[j]) {
             result.emplace_back(list1[i]);
             ++i;
-        }
-        else {
+        } else {
             ++j;
         }
     }
@@ -249,4 +316,3 @@ std::vector<int> QueryProcessor::difference(const std::vector<int>& list1, const
 }
 
 } // namespace inverted_index
-

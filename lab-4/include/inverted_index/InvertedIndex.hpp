@@ -50,14 +50,14 @@ class InvertedIndex {
      *
      * @return A constant reference to the index map.
      */
-    const std::unordered_map<std::string, std::vector<uint8_t>>& getIndexMap() const;
+    const std::unordered_map<std::string, std::vector<uint8_t>> &getIndexMap() const;
 
     /**
      * @brief Retrieves the internal Skiplists instance.
      *
      * @return A constant reference to the Skiplists.
      */
-    const Skiplists& getSkiplists() const;
+    const Skiplists &getSkiplists() const;
 
     /**
      * @brief Inserts a term and its compressed posting list into the index.
@@ -65,7 +65,7 @@ class InvertedIndex {
      * @param term The term to insert.
      * @param compressed_posting The compressed posting list for the term.
      */
-    void insertTerm(const std::string& term, const std::vector<uint8_t>& compressed_posting);
+    void insertTerm(const std::string &term, const std::vector<uint8_t> &compressed_posting);
 
     /**
      * @brief Inserts skip pointers for a given term.
@@ -73,7 +73,7 @@ class InvertedIndex {
      * @param term The term for which to insert skip pointers.
      * @param skips The vector of SkipPointer structs.
      */
-    void insertSkips(const std::string& term, const std::vector<SkipPointer>& skips);
+    void insertSkips(const std::string &term, const std::vector<SkipPointer> &skips);
 
     /**
      * @brief Retrieves the total number of documents indexed.

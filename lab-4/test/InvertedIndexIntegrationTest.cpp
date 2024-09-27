@@ -5,9 +5,8 @@
 namespace inverted_index {
 
 class InvertedIndexIntegrationTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
-        // Initialize logger for testing
         Logger::getInstance().setLogLevel(LogLevel::DEBUG);
     }
 
@@ -75,4 +74,3 @@ TEST_F(InvertedIndexIntegrationTest, LargePostingList) {
 }
 
 } // namespace inverted_index
-

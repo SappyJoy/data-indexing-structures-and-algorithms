@@ -7,7 +7,6 @@ namespace inverted_index {
 class PForDeltaTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        // Initialize logger for testing
         Logger::getInstance().setLogLevel(LogLevel::DEBUG);
     }
 };

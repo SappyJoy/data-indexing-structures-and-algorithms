@@ -13,11 +13,12 @@ namespace inverted_index {
  * @return The number of bits required to represent max_val.
  */
 static uint8_t calculate_bits(int max_val) {
-    if (max_val == 0) return 1;
+    if (max_val == 0)
+        return 1;
     return static_cast<uint8_t>(std::ceil(std::log2(max_val + 1)));
 }
 
-std::vector<uint8_t> PForDelta::encode(const std::vector<int>& doc_ids) {
+std::vector<uint8_t> PForDelta::encode(const std::vector<int> &doc_ids) {
     LOG_DEBUG("Starting pForDelta encoding.");
     if (doc_ids.empty()) {
         LOG_WARNING("Empty document ID list provided for encoding.");
@@ -99,7 +100,7 @@ std::vector<uint8_t> PForDelta::encode(const std::vector<int>& doc_ids) {
     return compressed;
 }
 
-std::vector<int> PForDelta::decode(const std::vector<uint8_t>& compressed_data) {
+std::vector<int> PForDelta::decode(const std::vector<uint8_t> &compressed_data) {
     LOG_DEBUG("Starting pForDelta decoding.");
     if (compressed_data.empty()) {
         LOG_WARNING("Empty compressed data provided for decoding.");
@@ -109,7 +110,7 @@ std::vector<int> PForDelta::decode(const std::vector<uint8_t>& compressed_data) 
     std::vector<int> gaps;
     // Estimate the number of gaps based on compressed data size and block size
     // Not necessary, just reserve capacity
-    gaps.reserve(compressed_data.size()); 
+    gaps.reserve(compressed_data.size());
 
     size_t current = 0;
     size_t data_size = compressed_data.size();
@@ -183,8 +184,8 @@ std::vector<int> PForDelta::decode(const std::vector<uint8_t>& compressed_data) 
         doc_ids.push_back(doc_ids.back() + gaps[i]);
     }
 
-    LOG_INFO("pForDelta decoding completed. Original document IDs size: {}, Decoded size: {}.",
-             gaps.size(), doc_ids.size());
+    LOG_INFO("pForDelta decoding completed. Original document IDs size: {}, Decoded size: {}.", gaps.size(),
+             doc_ids.size());
 
     return doc_ids;
 }

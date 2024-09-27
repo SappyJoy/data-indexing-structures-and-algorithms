@@ -3,11 +3,11 @@
 
 namespace inverted_index {
 
-void Skiplists::addSkipPointer(const std::string& term, const SkipPointer& skip_pointer) {
+void Skiplists::addSkipPointer(const std::string &term, const SkipPointer &skip_pointer) {
     skip_map_[term].emplace_back(skip_pointer);
 }
 
-const std::vector<SkipPointer>& Skiplists::getSkipPointers(const std::string& term) const {
+const std::vector<SkipPointer> &Skiplists::getSkipPointers(const std::string &term) const {
     static const std::vector<SkipPointer> empty;
     auto it = skip_map_.find(term);
     if (it != skip_map_.end()) {
@@ -16,15 +16,11 @@ const std::vector<SkipPointer>& Skiplists::getSkipPointers(const std::string& te
     return empty;
 }
 
-bool Skiplists::hasSkipPointers(const std::string& term) const {
-    return skip_map_.find(term) != skip_map_.end();
-}
+bool Skiplists::hasSkipPointers(const std::string &term) const { return skip_map_.find(term) != skip_map_.end(); }
 
-void Skiplists::clear() {
-    skip_map_.clear();
-}
+void Skiplists::clear() { skip_map_.clear(); }
 
-void Skiplists::buildSkipPointers(const std::string& term, const std::vector<uint8_t>& compressed_data) {
+void Skiplists::buildSkipPointers(const std::string &term, const std::vector<uint8_t> &compressed_data) {
     LOG_DEBUG("Building skip pointers for term '{}'.", term);
     if (compressed_data.empty()) {
         LOG_WARNING("No compressed data provided for term '{}'. Skippointers not built.", term);
@@ -126,8 +122,8 @@ void Skiplists::buildSkipPointers(const std::string& term, const std::vector<uin
     LOG_INFO("Built {} skip pointers for term '{}'.", skip_map_[term].size(), term);
 }
 
-void Skiplists::addSkipPointers(const std::string& term, const std::vector<SkipPointer>& skips) {
-    auto& term_skips = skip_map_[term];
+void Skiplists::addSkipPointers(const std::string &term, const std::vector<SkipPointer> &skips) {
+    auto &term_skips = skip_map_[term];
     term_skips.insert(term_skips.end(), skips.begin(), skips.end());
 }
 

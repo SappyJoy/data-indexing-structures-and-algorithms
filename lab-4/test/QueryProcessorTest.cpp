@@ -1,15 +1,15 @@
+#include "inverted_index/QueryProcessor.hpp"
 #include "inverted_index/InvertedIndex.hpp"
 #include "inverted_index/StorageManager.hpp"
-#include "inverted_index/QueryProcessor.hpp"
 #include "log/Logger.hpp"
 #include <gtest/gtest.h>
-#include <vector>
 #include <string>
+#include <vector>
 
 namespace inverted_index {
 
 // Helper function to create a sample InvertedIndex with predefined documents
-void createSampleIndex(InvertedIndex& index) {
+void createSampleIndex(InvertedIndex &index) {
     index.addDocument(1, "the quick brown fox");
     index.addDocument(2, "jumps over the lazy dog");
     index.addDocument(3, "hello world");
@@ -18,8 +18,9 @@ void createSampleIndex(InvertedIndex& index) {
 }
 
 // Helper function to compare two vectors irrespective of order
-bool compareVectors(const std::vector<int>& v1, const std::vector<int>& v2) {
-    if (v1.size() != v2.size()) return false;
+bool compareVectors(const std::vector<int> &v1, const std::vector<int> &v2) {
+    if (v1.size() != v2.size())
+        return false;
     std::vector<int> sorted_v1 = v1;
     std::vector<int> sorted_v2 = v2;
     std::sort(sorted_v1.begin(), sorted_v1.end());
@@ -27,15 +28,13 @@ bool compareVectors(const std::vector<int>& v1, const std::vector<int>& v2) {
     return sorted_v1 == sorted_v2;
 }
 
-
 // Test Fixture for QueryProcessor Tests
 class QueryProcessorTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
-        // Initialize logger for testing
         try {
             Logger::getInstance().enableFileLogging("logs/test_query_processor.log");
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
             std::cerr << "Logger initialization failed: " << e.what() << std::endl;
             // Handle logger initialization failure if necessary
         }
@@ -48,10 +47,7 @@ protected:
         query_processor = std::make_unique<inverted_index::QueryProcessor>(index);
     }
 
-    void TearDown() override {
-        // Clean up log files or other resources if necessary
-        // Remove the temporary file after each test if used
-    }
+    void TearDown() override {}
 
     inverted_index::InvertedIndex index;
     std::unique_ptr<inverted_index::QueryProcessor> query_processor;
@@ -64,16 +60,16 @@ TEST_F(QueryProcessorTest, SingleTermQueries) {
     std::vector<int> expected1 = {3, 4};
     auto result1 = query_processor->executeQuery(query1);
     EXPECT_TRUE(inverted_index::compareVectors(result1, expected1))
-        << "Query: \"" << query1 << "\" Expected: {3, 4} Got: {" << 
-        ((result1.empty()) ? "" : std::to_string(result1[0])) << "}";
-    
+        << "Query: \"" << query1 << "\" Expected: {3, 4} Got: {"
+        << ((result1.empty()) ? "" : std::to_string(result1[0])) << "}";
+
     // Query for "fox"
     std::string query2 = "fox";
     std::vector<int> expected2 = {1, 5};
     auto result2 = query_processor->executeQuery(query2);
     EXPECT_TRUE(inverted_index::compareVectors(result2, expected2))
-        << "Query: \"" << query2 << "\" Expected: {1, 5} Got: {" << 
-        ((result2.empty()) ? "" : std::to_string(result2[0])) << "}";
+        << "Query: \"" << query2 << "\" Expected: {1, 5} Got: {"
+        << ((result2.empty()) ? "" : std::to_string(result2[0])) << "}";
 }
 
 // Test Case 2: AND Operator
@@ -82,16 +78,11 @@ TEST_F(QueryProcessorTest, AndOperator) {
     std::string query = "hello AND dog";
     std::vector<int> expected = {}; // No document contains both "hello" and "dog"
     auto result = query_processor->executeQuery(query);
-    EXPECT_TRUE(inverted_index::compareVectors(result, expected))
-        << "Query: \"" << query << "\" Expected: {} Got: {";
-    
+    EXPECT_TRUE(inverted_index::compareVectors(result, expected)) << "Query: \"" << query << "\" Expected: {} Got: {";
+
     // Adding a document that contains both "hello" and "dog"
     index.addDocument(6, "hello dog");
-    // Rebuild Skiplists or necessary components if required
-    // For simplicity, assume it's handled automatically
-    // Update QueryProcessor reference if necessary
-    // Not required here as we're testing the existing setup
-    
+
     // Query again
     expected = {6};
     result = query_processor->executeQuery(query);
@@ -107,7 +98,7 @@ TEST_F(QueryProcessorTest, OrOperator) {
     auto result = query_processor->executeQuery(query);
     EXPECT_TRUE(inverted_index::compareVectors(result, expected))
         << "Query: \"" << query << "\" Expected: {1, 2} Got: {";
-    
+
     // Query: "hello OR fox"
     std::string query2 = "hello OR fox";
     std::vector<int> expected2 = {1, 3, 4, 5};
@@ -126,7 +117,7 @@ TEST_F(QueryProcessorTest, NotOperator) {
     auto result = query_processor->executeQuery(query);
     EXPECT_TRUE(inverted_index::compareVectors(result, expected))
         << "Query: \"" << query << "\" Expected: {2, 3, 4} Got: {";
-    
+
     // Query: "hello AND NOT dog"
     std::string query2 = "hello AND NOT dog";
     // Documents containing "hello" are 3,4
@@ -147,9 +138,8 @@ TEST_F(QueryProcessorTest, CombinedOperatorsAndParentheses) {
     // Intersection is {5}
     std::vector<int> expected = {5};
     auto result = query_processor->executeQuery(query);
-    EXPECT_TRUE(inverted_index::compareVectors(result, expected))
-        << "Query: \"" << query << "\" Expected: {5} Got: {";
-    
+    EXPECT_TRUE(inverted_index::compareVectors(result, expected)) << "Query: \"" << query << "\" Expected: {5} Got: {";
+
     // Query: "hello AND (world OR again)"
     std::string query2 = "hello AND (world OR again)";
     // Documents containing "hello" are {3,4}
@@ -157,7 +147,7 @@ TEST_F(QueryProcessorTest, CombinedOperatorsAndParentheses) {
     // Documents containing "again" are {4}
     // Union of "world" OR "again" is {3,4}
     // Intersection with "hello" is {3,4}
-    std::vector<int> expected2 = {3,4};
+    std::vector<int> expected2 = {3, 4};
     auto result2 = query_processor->executeQuery(query2);
     EXPECT_TRUE(inverted_index::compareVectors(result2, expected2))
         << "Query: \"" << query2 << "\" Expected: {3, 4} Got: {";
@@ -169,9 +159,8 @@ TEST_F(QueryProcessorTest, NonExistentTerms) {
     std::string query = "cat AND dog";
     std::vector<int> expected = {}; // "cat" does not exist
     auto result = query_processor->executeQuery(query);
-    EXPECT_TRUE(inverted_index::compareVectors(result, expected))
-        << "Query: \"" << query << "\" Expected: {} Got: {";
-    
+    EXPECT_TRUE(inverted_index::compareVectors(result, expected)) << "Query: \"" << query << "\" Expected: {} Got: {";
+
     // Query: "hello AND unicorn"
     std::string query2 = "hello AND unicorn";
     std::vector<int> expected2 = {}; // "unicorn" does not exist
@@ -184,33 +173,23 @@ TEST_F(QueryProcessorTest, NonExistentTerms) {
 TEST_F(QueryProcessorTest, MalformedQueries) {
     // Query: "AND dog"
     std::string query1 = "AND dog";
-    EXPECT_THROW({
-        query_processor->executeQuery(query1);
-    }, std::invalid_argument);
-    
+    EXPECT_THROW({ query_processor->executeQuery(query1); }, std::invalid_argument);
+
     // Query: "hello OR"
     std::string query2 = "hello OR";
-    EXPECT_THROW({
-        query_processor->executeQuery(query2);
-    }, std::invalid_argument);
-    
+    EXPECT_THROW({ query_processor->executeQuery(query2); }, std::invalid_argument);
+
     // Query: "hello AND (dog OR"
     std::string query3 = "hello AND (dog OR";
-    EXPECT_THROW({
-        query_processor->executeQuery(query3);
-    }, std::invalid_argument);
-    
+    EXPECT_THROW({ query_processor->executeQuery(query3); }, std::invalid_argument);
+
     // Query: "hello OR (dog AND )"
     std::string query4 = "hello OR (dog AND )";
-    EXPECT_THROW({
-        query_processor->executeQuery(query4);
-    }, std::invalid_argument);
-    
+    EXPECT_THROW({ query_processor->executeQuery(query4); }, std::invalid_argument);
+
     // Query: "hello NOT AND dog"
     std::string query5 = "hello NOT AND dog";
-    EXPECT_THROW({
-        query_processor->executeQuery(query5);
-    }, std::invalid_argument);
+    EXPECT_THROW({ query_processor->executeQuery(query5); }, std::invalid_argument);
 }
 
 } // namespace inverted_index

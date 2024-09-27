@@ -1,15 +1,14 @@
 #include "inverted_index/StorageManager.hpp"
 #include "inverted_index/InvertedIndex.hpp"
 #include "inverted_index/Skiplists.hpp"
-#include "inverted_index/pForDelta.hpp" // Ensure access to pForDelta encoding
 #include "log/Logger.hpp"
 
-#include <fstream>
 #include <cstring> // For memcpy
+#include <fstream>
 
 namespace inverted_index {
 
-void StorageManager::saveIndex(const InvertedIndex& index, const std::string& filepath) {
+void StorageManager::saveIndex(const InvertedIndex &index, const std::string &filepath) {
     LOG_DEBUG("Saving inverted index to file '{}'.", filepath);
 
     std::ofstream out(filepath, std::ios::binary);
@@ -27,8 +26,8 @@ void StorageManager::saveIndex(const InvertedIndex& index, const std::string& fi
     LOG_DEBUG("Written magic number and version.");
 
     // Retrieve the index map and Skiplists
-    const auto& index_map = index.getIndexMap(); // Assuming InvertedIndex has getIndexMap()
-    const Skiplists& skiplists = index.getSkiplists(); // Assuming InvertedIndex has getSkiplists()
+    const auto &index_map = index.getIndexMap();
+    const Skiplists &skiplists = index.getSkiplists();
 
     // Write number of terms
     uint32_t num_terms = static_cast<uint32_t>(index_map.size());
@@ -36,7 +35,7 @@ void StorageManager::saveIndex(const InvertedIndex& index, const std::string& fi
     LOG_DEBUG("Written number of terms: {}", num_terms);
 
     // Iterate through each term
-    for (const auto& [term, compressed_posting] : index_map) {
+    for (const auto &[term, compressed_posting] : index_map) {
         // Write term length and term string
         writeString(out, term);
 
@@ -47,13 +46,13 @@ void StorageManager::saveIndex(const InvertedIndex& index, const std::string& fi
         LOG_DEBUG("Written posting list for term '{}', size: {}", term, posting_size);
 
         // Retrieve skip pointers for the term
-        const auto& skips = skiplists.getSkipPointers(term);
+        const auto &skips = skiplists.getSkipPointers(term);
         uint32_t num_skips = static_cast<uint32_t>(skips.size());
         writeBinary(out, num_skips);
         LOG_DEBUG("Written number of skip pointers for term '{}': {}", term, num_skips);
 
         // Write each skip pointer
-        for (const auto& skip : skips) {
+        for (const auto &skip : skips) {
             int32_t doc_id = static_cast<int32_t>(skip.doc_id);
             uint64_t byte_offset = static_cast<uint64_t>(skip.byte_offset);
             writeBinary(out, doc_id);
@@ -66,7 +65,7 @@ void StorageManager::saveIndex(const InvertedIndex& index, const std::string& fi
     LOG_INFO("Inverted index successfully saved to '{}'.", filepath);
 }
 
-void StorageManager::loadIndex(InvertedIndex& index, const std::string& filepath) {
+void StorageManager::loadIndex(InvertedIndex &index, const std::string &filepath) {
     LOG_DEBUG("Loading inverted index from file '{}'.", filepath);
 
     std::ifstream in(filepath, std::ios::binary);
@@ -131,8 +130,8 @@ void StorageManager::loadIndex(InvertedIndex& index, const std::string& filepath
         }
 
         // Insert the term into the InvertedIndex
-        index.insertTerm(term, compressed_posting); // Assuming InvertedIndex has insertTerm()
-        index.insertSkips(term, skips); // Assuming InvertedIndex has insertSkips()
+        index.insertTerm(term, compressed_posting);
+        index.insertSkips(term, skips);
         LOG_DEBUG("Inserted term '{}' with posting list and skip pointers.", term);
     }
 
@@ -140,7 +139,7 @@ void StorageManager::loadIndex(InvertedIndex& index, const std::string& filepath
     LOG_INFO("Inverted index successfully loaded from '{}'.", filepath);
 }
 
-void StorageManager::writeString(std::ostream& out, const std::string& str) {
+void StorageManager::writeString(std::ostream &out, const std::string &str) {
     uint32_t length = static_cast<uint32_t>(str.size());
     writeBinary(out, length);
     out.write(str.c_str(), length);
@@ -150,7 +149,7 @@ void StorageManager::writeString(std::ostream& out, const std::string& str) {
     LOG_DEBUG("Written string of length {}.", length);
 }
 
-void StorageManager::readString(std::istream& in, std::string& str) {
+void StorageManager::readString(std::istream &in, std::string &str) {
     uint32_t length;
     readBinary(in, length);
     LOG_DEBUG("Reading string of length {}.", length);
@@ -163,9 +162,9 @@ void StorageManager::readString(std::istream& in, std::string& str) {
     }
 }
 
-void StorageManager::writeBytes(std::ostream& out, const std::vector<uint8_t>& data) {
+void StorageManager::writeBytes(std::ostream &out, const std::vector<uint8_t> &data) {
     if (!data.empty()) {
-        out.write(reinterpret_cast<const char*>(data.data()), data.size());
+        out.write(reinterpret_cast<const char *>(data.data()), data.size());
         if (!out) {
             throw std::runtime_error("Failed to write byte data.");
         }
@@ -173,21 +172,10 @@ void StorageManager::writeBytes(std::ostream& out, const std::vector<uint8_t>& d
     }
 }
 
-void StorageManager::readBytes(std::istream& in, std::vector<uint8_t>& data, size_t size) {
-    // Determine the remaining bytes to read based on the previously read size
-    // This method assumes that the caller has already read the size and allocated space accordingly
-    // Since we don't have the size here, the caller must ensure the correct number of bytes are read
-    // Therefore, this function is called after reading the size and before reading the bytes
-    // The function here simply resizes the vector and reads into it
-    // Actual reading is handled in the caller
-    // To keep it simple, we can read all remaining bytes, but it's better to let the caller handle exact sizes
-
-    // In this implementation, readBytes is called after reading the size and allocating the vector accordingly
-    // So we can pass the exact size to read
-    // Adjusted accordingly in the saveIndex and loadIndex methods
+void StorageManager::readBytes(std::istream &in, std::vector<uint8_t> &data, size_t size) {
     data.resize(size);
     if (size > 0) {
-        in.read(reinterpret_cast<char*>(data.data()), size);
+        in.read(reinterpret_cast<char *>(data.data()), size);
         if (static_cast<size_t>(in.gcount()) != size) {
             throw std::runtime_error("Failed to read the expected number of bytes.");
         }
@@ -195,6 +183,4 @@ void StorageManager::readBytes(std::istream& in, std::vector<uint8_t>& data, siz
     }
 }
 
-
 } // namespace inverted_index
-

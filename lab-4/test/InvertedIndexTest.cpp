@@ -1,5 +1,3 @@
-// File: test/Testing/InvertedIndexTest.cpp
-
 #include "inverted_index/InvertedIndex.hpp"
 #include "log/Logger.hpp"
 #include <gtest/gtest.h>
@@ -9,7 +7,6 @@ namespace inverted_index {
 class InvertedIndexTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        // Initialize logger for testing
         Logger::getInstance().setLogLevel(LogLevel::DEBUG);
     }
 

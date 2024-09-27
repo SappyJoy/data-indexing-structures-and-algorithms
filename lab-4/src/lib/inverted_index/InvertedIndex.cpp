@@ -43,7 +43,7 @@ void InvertedIndex::addDocument(int doc_id, const std::string &text) {
         if (!compressed_posting.empty()) {
             try {
                 posting_list = PForDelta::decode(compressed_posting);
-            } catch (const std::invalid_argument& e) {
+            } catch (const std::invalid_argument &e) {
                 LOG_ERROR("Failed to decode posting list for term '{}': {}", term, e.what());
                 continue;
             }
@@ -72,7 +72,7 @@ void InvertedIndex::addDocument(int doc_id, const std::string &text) {
         std::vector<uint8_t> new_compressed_posting;
         try {
             new_compressed_posting = PForDelta::encode(posting_list);
-        } catch (const std::invalid_argument& e) {
+        } catch (const std::invalid_argument &e) {
             LOG_ERROR("Failed to encode posting list for term '{}': {}", term, e.what());
             continue;
         }
@@ -82,9 +82,9 @@ void InvertedIndex::addDocument(int doc_id, const std::string &text) {
         // Build skip pointers for the term based on the new compressed data
         try {
             skiplists_.buildSkipPointers(term, index_[term]);
-        } catch (const std::invalid_argument& e) {
+        } catch (const std::invalid_argument &e) {
             LOG_ERROR("Failed to build Skiplists for term '{}': {}", term, e.what());
-            // Optionally, handle the error or continue
+            // TODO: handle the error or continue
             continue;
         }
     }
@@ -94,7 +94,6 @@ void InvertedIndex::addDocument(int doc_id, const std::string &text) {
 }
 
 std::vector<int> InvertedIndex::getPostings(const std::string &term) const {
-    // Acquire shared lock for reading
     std::shared_lock<std::shared_mutex> lock(mutex_);
 
     auto it = index_.find(term);
@@ -102,7 +101,7 @@ std::vector<int> InvertedIndex::getPostings(const std::string &term) const {
         LOG_DEBUG("Retrieved postings for term '{}'.", term);
         try {
             return PForDelta::decode(it->second);
-        } catch (const std::invalid_argument& e) {
+        } catch (const std::invalid_argument &e) {
             LOG_ERROR("Failed to decode posting list for term '{}': {}", term, e.what());
             return {};
         }
@@ -113,7 +112,6 @@ std::vector<int> InvertedIndex::getPostings(const std::string &term) const {
 }
 
 bool InvertedIndex::contains(const std::string &term) const {
-    // Acquire shared lock for reading
     std::shared_lock<std::shared_mutex> lock(mutex_);
     return index_.find(term) != index_.end();
 }
@@ -130,23 +128,18 @@ std::vector<std::string> InvertedIndex::tokenize(const std::string &text) const 
     return tokens;
 }
 
+const std::unordered_map<std::string, std::vector<uint8_t>> &InvertedIndex::getIndexMap() const { return index_; }
 
-const std::unordered_map<std::string, std::vector<uint8_t>>& InvertedIndex::getIndexMap() const {
-    return index_;
-}
+const Skiplists &InvertedIndex::getSkiplists() const { return skiplists_; }
 
-const Skiplists& InvertedIndex::getSkiplists() const {
-    return skiplists_;
-}
-
-void InvertedIndex::insertTerm(const std::string& term, const std::vector<uint8_t>& compressed_posting) {
+void InvertedIndex::insertTerm(const std::string &term, const std::vector<uint8_t> &compressed_posting) {
     std::unique_lock lock(mutex_);
     index_[term] = compressed_posting;
 }
 
-void InvertedIndex::insertSkips(const std::string& term, const std::vector<SkipPointer>& skips) {
+void InvertedIndex::insertSkips(const std::string &term, const std::vector<SkipPointer> &skips) {
     std::unique_lock lock(mutex_);
-    skiplists_.addSkipPointers(term, skips); // Implement a method to add multiple skips
+    skiplists_.addSkipPointers(term, skips);
 }
 
 int InvertedIndex::getTotalDocuments() const {
