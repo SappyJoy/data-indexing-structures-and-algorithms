@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "Skiplists.hpp"
+
 namespace inverted_index {
 
 /**
@@ -30,7 +32,7 @@ class InvertedIndex {
      * @brief Retrieves the posting list for a given term.
      *
      * @param term The term for which to retrieve the posting list.
-     * @return A constant reference to the vector of document IDs containing the term.
+     * @return A sorted vector of document IDs containing the term.
      *         Returns an empty vector if the term does not exist.
      */
     std::vector<int> getPostings(const std::string &term) const;
@@ -43,11 +45,45 @@ class InvertedIndex {
      */
     bool contains(const std::string &term) const;
 
+    /**
+     * @brief Retrieves the internal index map.
+     *
+     * @return A constant reference to the index map.
+     */
+    const std::unordered_map<std::string, std::vector<uint8_t>>& getIndexMap() const;
+
+    /**
+     * @brief Retrieves the internal Skiplists instance.
+     *
+     * @return A constant reference to the Skiplists.
+     */
+    const Skiplists& getSkiplists() const;
+
+    /**
+     * @brief Inserts a term and its compressed posting list into the index.
+     *
+     * @param term The term to insert.
+     * @param compressed_posting The compressed posting list for the term.
+     */
+    void insertTerm(const std::string& term, const std::vector<uint8_t>& compressed_posting);
+
+    /**
+     * @brief Inserts skip pointers for a given term.
+     *
+     * @param term The term for which to insert skip pointers.
+     * @param skips The vector of SkipPointer structs.
+     */
+    void insertSkips(const std::string& term, const std::vector<SkipPointer>& skips);
+
+
   private:
     // Mapping from term to its compressed posting list (vector of bytes)
     std::unordered_map<std::string, std::vector<uint8_t>> index_;
 
-    // Mutex for thread-safe access to the index
+    // Skiplists instance to manage skip pointers
+    Skiplists skiplists_;
+
+    // Mutex for thread-safe access to the index and skiplists
     mutable std::shared_mutex mutex_;
 
     /**

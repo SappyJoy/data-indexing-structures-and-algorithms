@@ -8,7 +8,9 @@
 
 namespace inverted_index {
 
-InvertedIndex::InvertedIndex() { LOG_DEBUG("InvertedIndex initialized with pForDelta compression."); }
+InvertedIndex::InvertedIndex() {
+    LOG_DEBUG("InvertedIndex initialized with pForDelta compression and Skiplists.");
+}
 
 void InvertedIndex::addDocument(int doc_id, const std::string &text) {
     LOG_DEBUG("Adding document ID {} to the inverted index.", doc_id);
@@ -37,7 +39,15 @@ void InvertedIndex::addDocument(int doc_id, const std::string &text) {
         auto &compressed_posting = index_[term];
 
         // Decompress current posting list
-        std::vector<int> posting_list = PForDelta::decode(compressed_posting);
+        std::vector<int> posting_list;
+        if (!compressed_posting.empty()) {
+            try {
+                posting_list = PForDelta::decode(compressed_posting);
+            } catch (const std::invalid_argument& e) {
+                LOG_ERROR("Failed to decode posting list for term '{}': {}", term, e.what());
+                continue;
+            }
+        }
 
         // Insert doc_id in sorted order without duplicates
         if (posting_list.empty() || posting_list.back() < doc_id) {
@@ -59,7 +69,24 @@ void InvertedIndex::addDocument(int doc_id, const std::string &text) {
         }
 
         // Recompress the posting list
-        compressed_posting = PForDelta::encode(posting_list);
+        std::vector<uint8_t> new_compressed_posting;
+        try {
+            new_compressed_posting = PForDelta::encode(posting_list);
+        } catch (const std::invalid_argument& e) {
+            LOG_ERROR("Failed to encode posting list for term '{}': {}", term, e.what());
+            continue;
+        }
+
+        index_[term] = std::move(new_compressed_posting);
+
+        // Build skip pointers for the term based on the new compressed data
+        try {
+            skiplists_.buildSkipPointers(term, index_[term]);
+        } catch (const std::invalid_argument& e) {
+            LOG_ERROR("Failed to build Skiplists for term '{}': {}", term, e.what());
+            // Optionally, handle the error or continue
+            continue;
+        }
     }
 
     LOG_INFO("Document ID {} added successfully.", doc_id);
@@ -72,7 +99,12 @@ std::vector<int> InvertedIndex::getPostings(const std::string &term) const {
     auto it = index_.find(term);
     if (it != index_.end()) {
         LOG_DEBUG("Retrieved postings for term '{}'.", term);
-        return PForDelta::decode(it->second);
+        try {
+            return PForDelta::decode(it->second);
+        } catch (const std::invalid_argument& e) {
+            LOG_ERROR("Failed to decode posting list for term '{}': {}", term, e.what());
+            return {};
+        }
     }
 
     LOG_DEBUG("Term '{}' not found in the inverted index.", term);
@@ -95,6 +127,23 @@ std::vector<std::string> InvertedIndex::tokenize(const std::string &text) const 
     }
 
     return tokens;
+}
+
+
+const std::unordered_map<std::string, std::vector<uint8_t>>& InvertedIndex::getIndexMap() const {
+    return index_;
+}
+
+const Skiplists& InvertedIndex::getSkiplists() const {
+    return skiplists_;
+}
+
+void InvertedIndex::insertTerm(const std::string& term, const std::vector<uint8_t>& compressed_posting) {
+    index_[term] = compressed_posting;
+}
+
+void InvertedIndex::insertSkips(const std::string& term, const std::vector<SkipPointer>& skips) {
+    skiplists_.addSkipPointers(term, skips); // Implement a method to add multiple skips
 }
 
 } // namespace inverted_index
