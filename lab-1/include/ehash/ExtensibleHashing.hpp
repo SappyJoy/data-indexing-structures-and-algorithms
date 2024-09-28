@@ -30,7 +30,6 @@ template <typename T> class ExtensibleHashing {
     std::string bucketDirectory; // Path where the bucket files are stored
     size_t maxBucketSize;        // Maximum size of each bucket (multiple of block size)
 
-    // Hash function (using basic std::hash)
     size_t hashKey(const std::string &key) const { return std::hash<std::string>{}(key); }
 
     // Get the hash prefix (using given depth)
@@ -104,7 +103,6 @@ template <typename T> class ExtensibleHashing {
     }
 
   public:
-    // Constructor
     ExtensibleHashing(const std::string &directoryPath, size_t bucketSize)
         : ExtensibleHashing(directoryPath, bucketSize, 1) {}
 
@@ -118,7 +116,6 @@ template <typename T> class ExtensibleHashing {
         }
     }
 
-    // Add entry to the hash table
     size_t addEntry(std::unique_ptr<T> entry) {
         // Serialize the key once
         std::string serializedKey;
@@ -158,7 +155,6 @@ template <typename T> class ExtensibleHashing {
         return directories.at(bucketIndex)->bucket->getEntries();
     }
 
-    // Retrieve entries in a bucket for testing or debugging
     const std::vector<std::unique_ptr<T>> &getEntries(const size_t &hash) const {
         size_t bucketIndex = getHashPrefix(hash, globalDepth);
         return directories.at(bucketIndex)->bucket->getEntries();
@@ -166,19 +162,18 @@ template <typename T> class ExtensibleHashing {
 
     std::optional<T *> getEntry(const size_t &hash) const {
         size_t bucketIndex = getHashPrefix(hash, globalDepth);
-        const auto &entries = directories.at(bucketIndex)->bucket->getEntries(); // Get entries from the correct bucket
+        const auto &entries = directories.at(bucketIndex)->bucket->getEntries();
 
         for (const auto &entry : entries) {
             std::string serializedKey;
-            entry->SerializeToString(&serializedKey); // Serialize the entry to compare the hash
+            entry->SerializeToString(&serializedKey);
 
-            // Check if the hash of this entry matches the input hash
             if (hashKey(serializedKey) == hash) {
-                return entry.get(); // Return raw pointer (no ownership change)
+                return entry.get();
             }
         }
 
-        return std::nullopt; // If no entry is found, return std::nullopt
+        return std::nullopt;
     }
 
     void print() const {
