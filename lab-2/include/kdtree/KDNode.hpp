@@ -8,16 +8,13 @@ namespace kdtree {
 
 class KDNode {
   public:
-    // Constructors
     KDNode(const Point &point, size_t axis);
 
-    // Accessors
     const Point &point() const;
     size_t axis() const;
     std::shared_ptr<KDNode> left() const;
     std::shared_ptr<KDNode> right() const;
 
-    // Modifiers
     void set_left(std::shared_ptr<KDNode> left);
     void set_right(std::shared_ptr<KDNode> right);
 

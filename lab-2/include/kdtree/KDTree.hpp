@@ -9,24 +9,20 @@
 
 namespace kdtree {
 
-// Comparator struct for the priority_queue
 struct CompareDistance {
     bool operator()(const std::pair<double, Point> &a, const std::pair<double, Point> &b) const {
-        return a.first < b.first; // Max-heap based on distance
+        return a.first < b.first;
     }
 };
 
 class KDTree {
   public:
-    // Constructors
     KDTree();
     explicit KDTree(const std::vector<Point> &points);
 
-    // Modifiers
     void insert(const Point &point);
     void build(const std::vector<Point> &points);
 
-    // Query Methods
     std::vector<Point> nearest_neighbors(const Point &query, size_t k) const;
     std::vector<Point> range_search(const Point &query, double radius) const;
 
@@ -36,7 +32,6 @@ class KDTree {
     std::shared_ptr<KDNode> root_;
     size_t dimension_;
 
-    // Helper Functions
     std::shared_ptr<KDNode> build_tree(std::vector<Point>::iterator begin, std::vector<Point>::iterator end,
                                        size_t depth);
     std::shared_ptr<KDNode> insert_point(std::shared_ptr<KDNode> node, const Point &point, size_t depth);

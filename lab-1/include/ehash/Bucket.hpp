@@ -119,7 +119,6 @@ template <typename T> class Bucket {
     }
 
   public:
-    // Constructor to initialize the bucket with file path and maximum size
     Bucket(const std::string &path, size_t maxSize) : filePath(path), currentSize(0) {
         // Create the file if it doesn't exist
         createFileIfNotExists(path);

@@ -30,8 +30,6 @@ template <typename T> class ExtensibleHashing {
     std::string bucketDirectory; // Path where the bucket files are stored
     size_t maxBucketSize;        // Maximum size of each bucket (multiple of block size)
 
-    size_t hashKey(const std::string &key) const { return std::hash<std::string>{}(key); }
-
     // Get the hash prefix (using given depth)
     size_t getHashPrefix(size_t hashValue, size_t depth) const {
         return hashValue & ((1 << depth) - 1); // Mask hashValue to use only depth bits
@@ -175,6 +173,8 @@ template <typename T> class ExtensibleHashing {
 
         return std::nullopt;
     }
+
+    size_t hashKey(const std::string &key) const { return std::hash<std::string>{}(key); }
 
     void print() const {
         for (const auto &pair : directories) {
